@@ -744,58 +744,489 @@ elif pagina == "Análisis por planta":
     grafico_precios(df_p)
 
 
+
 # ==========================================================
-# 3. CONSUMO MENSUAL
+# 3. CONSUMO HISTORICO + PLANIFICACION MRP
 # ==========================================================
 
 elif pagina == "Consumo mensual":
 
-    st.markdown("## Análisis de consumo mensual")
+    st.markdown("## Análisis de consumo de materias primas")
+    st.caption(
+        "Comparación del consumo histórico SAP con la planificación MRP"
+    )
 
-    if consumo_filtrado.empty:
-        st.warning("No hay información de consumo para los filtros elegidos.")
+    # ------------------------------------------------------
+    # VALIDAR ARCHIVO MRP
+    # ------------------------------------------------------
+
+    if archivo_mrp is None:
+        st.warning(
+            "Carga el archivo Planificación MRP desde el menú lateral "
+            "para visualizar el stock y la planificación futura."
+        )
         st.stop()
 
-    materiales_lista = sorted(
-        consumo_filtrado["Material"].dropna().unique()
+    if consumos.empty:
+        st.warning("Primero debes cargar los archivos de consumo SAP.")
+        st.stop()
+
+    try:
+        archivo_mrp.seek(0)
+        datos_mrp = pd.read_excel(
+            archivo_mrp,
+            sheet_name="MRP",
+            header=7,
+            engine="openpyxl"
+        )
+
+        archivo_mrp.seek(0)
+        datos_ns = pd.read_excel(
+            archivo_mrp,
+            sheet_name="NS",
+            header=9,
+            engine="openpyxl"
+        )
+
+    except Exception as e:
+        st.error(f"No se pudo leer el archivo MRP: {e}")
+        st.stop()
+
+    # ------------------------------------------------------
+    # NORMALIZAR CODIGOS
+    # ------------------------------------------------------
+
+    def limpiar_codigo(valor):
+        if pd.isna(valor):
+            return ""
+
+        return str(valor).strip().replace(".0", "")
+
+    datos_mrp["Centro"] = datos_mrp["Centro"].astype(str).str.strip()
+    datos_ns["Centro"] = datos_ns["Centro"].astype(str).str.strip()
+
+    datos_mrp["Material"] = datos_mrp["Material"].apply(limpiar_codigo)
+    datos_ns["Material"] = datos_ns["Material"].apply(limpiar_codigo)
+
+    datos_mrp["Concat"] = datos_mrp["Concat"].astype(str).str.strip()
+    datos_mrp["Concat"] = datos_mrp["Concat"].str.replace(
+        r"\.0$", "", regex=True
     )
 
-    material = st.selectbox(
-        "Seleccionar materia prima",
-        materiales_lista
+    # Eliminar filas auxiliares del MRP:
+    # comentarios, equivalencias y registros sin material.
+    datos_mrp = datos_mrp[
+        datos_mrp["Material"].str.fullmatch(r"\d+", na=False)
+    ].copy()
+
+    # ------------------------------------------------------
+    # SELECCION DE PLANTA
+    # ------------------------------------------------------
+
+    planta_analisis = st.selectbox(
+        "Seleccionar planta",
+        list(PLANTAS.keys()),
+        key="planta_consumo_detalle"
     )
 
-    df_material = consumo_filtrado[
-        consumo_filtrado["Material"] == material
-    ]
+    centro = PLANTAS[planta_analisis]
 
-    descripcion = df_material["Descripción"].iloc[0]
+    consumo_planta = consumos[
+        consumos["Planta"] == planta_analisis
+    ].copy()
+
+    mrp_planta = datos_mrp[
+        datos_mrp["Centro"] == centro
+    ].copy()
+
+    ns_planta = datos_ns[
+        datos_ns["Centro"] == centro
+    ].copy()
+
+    if consumo_planta.empty and mrp_planta.empty:
+        st.warning("No existen datos para la planta seleccionada.")
+        st.stop()
+
+    # ------------------------------------------------------
+    # SELECCION DE MATERIAL
+    # ------------------------------------------------------
+
+    materiales_consumo = (
+        consumo_planta["Material"].dropna().astype(str).unique().tolist()
+        if not consumo_planta.empty else []
+    )
+
+    materiales_mrp = (
+        mrp_planta["Material"].dropna().astype(str).unique().tolist()
+        if not mrp_planta.empty else []
+    )
+
+    materiales_disponibles = sorted(
+        set(materiales_consumo + materiales_mrp)
+    )
+
+    material_seleccionado = st.selectbox(
+        "Buscar materia prima",
+        materiales_disponibles,
+        key="material_consumo_detalle"
+    )
+
+    # Filtrar consumo histórico del material
+    historial = consumo_planta[
+        consumo_planta["Material"].astype(str) == material_seleccionado
+    ].copy()
+
+    # Filtrar planificación del material
+    plan_material = mrp_planta[
+        mrp_planta["Material"].astype(str) == material_seleccionado
+    ].copy()
+
+    # Buscar el registro principal mediante Concat.
+    if not plan_material.empty:
+        concat_buscado = centro + material_seleccionado
+
+        registro_mrp = plan_material[
+            plan_material["Concat"] == concat_buscado
+        ]
+
+        if registro_mrp.empty:
+            registro_mrp = plan_material[
+                ~plan_material["Concat"].str.startswith(
+                    ("A", "S", "E", "SP", "SI"),
+                    na=False
+                )
+            ]
+
+    else:
+        registro_mrp = pd.DataFrame()
+
+    # Buscar datos de nivel de servicio
+    registro_ns = ns_planta[
+        ns_planta["Material"].astype(str) == material_seleccionado
+    ].copy()
+
+    # ------------------------------------------------------
+    # IDENTIFICACION DEL MATERIAL
+    # ------------------------------------------------------
+
+    descripcion = ""
+
+    if not historial.empty:
+        descripcion = historial["Descripción"].iloc[0]
+
+    elif not registro_ns.empty:
+        descripcion = registro_ns["Descripción del material"].iloc[0]
+
+    elif not registro_mrp.empty:
+        descripcion = registro_mrp["Descripción del material"].iloc[0]
 
     st.markdown(f"### {descripcion}")
+    st.caption(f"Material SAP: {material_seleccionado} | {planta_analisis}")
 
-    mostrar_kpi(
-        "Consumo neto del año",
-        f"{df_material['Consumo'].sum():,.2f}"
-    )
+    # ------------------------------------------------------
+    # INDICADORES DE INVENTARIO
+    # ------------------------------------------------------
 
-    grafico_consumo(df_material)
+    st.markdown("### Estado actual de la materia prima")
 
-    st.markdown("### Detalle mensual")
+    if not registro_mrp.empty:
 
-    detalle = (
-        df_material.groupby(
-            ["Año", "Mes", "Unidad"], as_index=False
-        )["Consumo"].sum()
-    )
+        fila = registro_mrp.iloc[0]
 
-    detalle["Mes"] = detalle["Mes"].map({
-        1: "Enero", 2: "Febrero", 3: "Marzo",
-        4: "Abril", 5: "Mayo", 6: "Junio",
-        7: "Julio", 8: "Agosto", 9: "Septiembre",
-        10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-    })
+        def obtener_numero(fila, columna):
+            if columna not in fila.index:
+                return 0
 
-    st.dataframe(detalle, use_container_width=True, hide_index=True)
+            return pd.to_numeric(
+                fila[columna], errors="coerce"
+            )
+
+        stock_actual = obtener_numero(fila, "Stock Actual")
+        stock_seguridad = obtener_numero(fila, "Stock Seguridad")
+        stock_maximo = obtener_numero(fila, "Stock Máximo")
+        consumo_proyectado = obtener_numero(
+            fila, "Consumo Proyectado"
+        )
+        cobertura = obtener_numero(fila, "Cobertura\n[Meses]")
+
+        if pd.isna(stock_actual):
+            stock_actual = 0
+
+        if pd.isna(stock_seguridad):
+            stock_seguridad = 0
+
+        if pd.isna(stock_maximo):
+            stock_maximo = 0
+
+        if pd.isna(consumo_proyectado):
+            consumo_proyectado = 0
+
+        if pd.isna(cobertura):
+            cobertura = 0
+
+        unidad = fila["UM"] if "UM" in fila.index else ""
+
+        k1, k2, k3, k4 = st.columns(4)
+
+        k1.metric(
+            "Stock actual",
+            f"{stock_actual:,.2f} {unidad}"
+        )
+
+        k2.metric(
+            "Stock de seguridad",
+            f"{stock_seguridad:,.2f} {unidad}"
+        )
+
+        k3.metric(
+            "Stock máximo",
+            f"{stock_maximo:,.2f} {unidad}"
+        )
+
+        k4.metric(
+            "Cobertura",
+            f"{cobertura:,.2f} meses"
+        )
+
+        # Indicador de nivel de servicio
+        if not registro_ns.empty:
+
+            ns_material = registro_ns.iloc[0]
+
+            clasificacion = ns_material.get(
+                "NS Corregido", "Sin clasificación"
+            )
+
+            st.info(
+                f"Clasificación de nivel de servicio: **{clasificacion}**"
+            )
+
+    else:
+        st.warning(
+            "No se encontró información de planificación MRP "
+            "para esta materia prima."
+        )
+
+        unidad = ""
+
+    # ------------------------------------------------------
+    # CONSUMO HISTORICO
+    # ------------------------------------------------------
+
+    st.markdown("### 1. Evolución del consumo histórico")
+
+    if not historial.empty:
+
+        historico_mensual = (
+            historial.groupby(
+                ["Año", "Mes"], as_index=False
+            )["Consumo"].sum()
+        )
+
+        historico_mensual["Fecha"] = pd.to_datetime(
+            historico_mensual["Año"].astype(str) + "-" +
+            historico_mensual["Mes"].astype(str).str.zfill(2) + "-01"
+        )
+
+        historico_mensual = historico_mensual.sort_values("Fecha")
+
+        fig = px.bar(
+            historico_mensual,
+            x="Fecha",
+            y="Consumo",
+            title="Consumo mensual real registrado en SAP",
+            color_discrete_sequence=["#3985D6"],
+            text_auto=".3s"
+        )
+
+        fig.update_layout(
+            template="plotly_white",
+            xaxis_title="Mes",
+            yaxis_title=f"Consumo ({unidad})",
+            hovermode="x unified"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        total_historico = historial["Consumo"].sum()
+
+        st.metric(
+            "Consumo acumulado del período disponible",
+            f"{total_historico:,.2f} {unidad}"
+        )
+
+    else:
+        st.info(
+            "No se encontraron movimientos históricos para este material."
+        )
+
+    # ------------------------------------------------------
+    # PLANIFICACION FUTURA MRP
+    # ------------------------------------------------------
+
+    st.markdown("### 2. Consumo proyectado según MRP")
+
+    if not registro_mrp.empty:
+
+        fila = registro_mrp.iloc[0]
+
+        columnas_meses = [
+            c for c in datos_mrp.columns
+            if isinstance(c, (datetime, pd.Timestamp))
+        ]
+
+        proyecciones = []
+
+        for columna in columnas_meses:
+
+            valor = pd.to_numeric(
+                pd.Series([fila[columna]]),
+                errors="coerce"
+            ).iloc[0]
+
+            if pd.notna(valor):
+                proyecciones.append({
+                    "Fecha": pd.to_datetime(columna),
+                    "Consumo proyectado": valor
+                })
+
+        if proyecciones:
+
+            proyeccion_df = pd.DataFrame(proyecciones)
+
+            fig = px.line(
+                proyeccion_df,
+                x="Fecha",
+                y="Consumo proyectado",
+                markers=True,
+                title="Planificación mensual futura",
+                color_discrete_sequence=["#16A34A"]
+            )
+
+            fig.update_layout(
+                template="plotly_white",
+                xaxis_title="Mes proyectado",
+                yaxis_title=f"Consumo proyectado ({unidad})"
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.dataframe(
+                proyeccion_df.rename(columns={
+                    "Fecha": "Mes",
+                    "Consumo proyectado": f"Consumo proyectado ({unidad})"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+            st.info(
+                "No hay valores mensuales proyectados disponibles "
+                "para este material."
+            )
+
+    else:
+        st.info("No existe planificación MRP para el material seleccionado.")
+
+    # ------------------------------------------------------
+    # COMPARACION HISTORICO Y PROYECCION
+    # ------------------------------------------------------
+
+    st.markdown("### 3. Comparación de consumo real y proyectado")
+
+    if not historial.empty and not registro_mrp.empty:
+
+        historico_comparacion = (
+            historial.groupby(
+                ["Año", "Mes"], as_index=False
+            )["Consumo"].sum()
+        )
+
+        historico_comparacion["Fecha"] = pd.to_datetime(
+            historico_comparacion["Año"].astype(str) + "-" +
+            historico_comparacion["Mes"].astype(str).str.zfill(2) + "-01"
+        )
+
+        historico_comparacion = historico_comparacion[
+            ["Fecha", "Consumo"]
+        ].rename(columns={
+            "Consumo": "Consumo real SAP"
+        })
+
+        if proyecciones:
+
+            proyeccion_comparacion = pd.DataFrame(proyecciones)
+
+            comparacion = pd.merge(
+                historico_comparacion,
+                proyeccion_comparacion,
+                on="Fecha",
+                how="outer"
+            ).sort_values("Fecha")
+
+            comparacion_larga = comparacion.melt(
+                id_vars="Fecha",
+                value_vars=[
+                    "Consumo real SAP",
+                    "Consumo proyectado"
+                ],
+                var_name="Tipo",
+                value_name="Cantidad"
+            )
+
+            fig = px.line(
+                comparacion_larga,
+                x="Fecha",
+                y="Cantidad",
+                color="Tipo",
+                markers=True,
+                title="Consumo histórico versus planificación",
+                color_discrete_map={
+                    "Consumo real SAP": "#3985D6",
+                    "Consumo proyectado": "#16A34A"
+                }
+            )
+
+            fig.update_layout(
+                template="plotly_white",
+                xaxis_title="Período",
+                yaxis_title=f"Cantidad ({unidad})"
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        else:
+            st.info("No hay proyecciones suficientes para comparar.")
+
+    # ------------------------------------------------------
+    # DETALLE DE MOVIMIENTOS SAP
+    # ------------------------------------------------------
+
+    with st.expander("Consultar detalle de movimientos SAP"):
+
+        if not historial.empty:
+
+            columnas_detalle = [
+                "Fecha",
+                "Material",
+                "Descripción",
+                "Movimiento",
+                "Cantidad original",
+                "Consumo",
+                "Unidad"
+            ]
+
+            st.dataframe(
+                historial[columnas_detalle].sort_values(
+                    "Fecha", ascending=False
+                ),
+                use_container_width=True,
+                hide_index=True
+            )
+
+        else:
+            st.info("No hay movimientos disponibles.")
 
 
 # ==========================================================

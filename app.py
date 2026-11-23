@@ -1229,81 +1229,322 @@ elif pagina == "Consumo mensual":
             st.info("No hay movimientos disponibles.")
 
 
+
 # ==========================================================
-# 4. EVOLUCION DE PRECIOS
+# 4. EVOLUCION Y ANALISIS DE PRECIOS
 # ==========================================================
 
 elif pagina == "Evolución de precios":
 
     st.markdown("## Evolución de precios")
+    st.caption(
+        "Análisis histórico de precios de adquisición de materias primas"
+    )
 
-    if precio_filtrado.empty:
-        st.warning("No hay información de precios para los filtros elegidos.")
+    if precios.empty:
+        st.warning("Carga los archivos de precios SAP desde el menú lateral.")
         st.stop()
 
-    materiales_lista = sorted(
-        precio_filtrado["Material"].dropna().unique()
-    )
+    # ------------------------------------------------------
+    # FILTROS
+    # ------------------------------------------------------
 
-    material = st.selectbox(
-        "Seleccionar materia prima",
-        materiales_lista
-    )
+    col1, col2 = st.columns(2)
 
-    df_material = precio_filtrado[
-        precio_filtrado["Material"] == material
+    with col1:
+        planta_precio = st.selectbox(
+            "Seleccionar planta",
+            ["Todas"] + list(PLANTAS.keys()),
+            key="planta_precios"
+        )
+
+    datos = precios.copy()
+
+    if planta_precio != "Todas":
+        datos = datos[datos["Planta"] == planta_precio]
+
+    datos = datos.dropna(subset=["Precio unitario", "Fecha"])
+
+    if datos.empty:
+        st.warning("No hay precios disponibles para esta selección.")
+        st.stop()
+
+    with col2:
+        materiales = sorted(
+            datos["Material"].dropna().astype(str).unique()
+        )
+
+        material_precio = st.selectbox(
+            "Seleccionar materia prima",
+            materiales,
+            key="material_precios"
+        )
+
+    # ------------------------------------------------------
+    # INFORMACION DEL MATERIAL
+    # ------------------------------------------------------
+
+    df = datos[
+        datos["Material"].astype(str) == material_precio
     ].copy()
 
-    st.markdown(
-        f"### {df_material['Descripción'].iloc[0]}"
+    if df.empty:
+        st.warning("No hay información para el material seleccionado.")
+        st.stop()
+
+    descripcion = df["Descripción"].iloc[0]
+
+    st.markdown(f"### {descripcion}")
+    st.caption(f"Código de material: {material_precio}")
+
+    # Posiciones vacías: posición 10.
+    df["Posición"] = (
+        df["Posición"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .replace("", "10")
     )
+
+    # ------------------------------------------------------
+    # FILTRO DE MONEDA
+    # ------------------------------------------------------
 
     monedas = sorted(
-        df_material["Moneda"].dropna().unique()
+        df["Moneda"].dropna().astype(str).str.upper().unique()
     )
 
-    moneda = st.selectbox("Moneda", monedas)
+    with col1:
+        moneda_precio = st.selectbox(
+            "Moneda de análisis",
+            monedas,
+            key="moneda_precios"
+        )
 
-    df_material = df_material[
-        df_material["Moneda"] == moneda
-    ]
+    df = df[
+        df["Moneda"].astype(str).str.upper() == moneda_precio
+    ].copy()
+
+    if df.empty:
+        st.info("No existen registros para esta moneda.")
+        st.stop()
+
+    df = df.sort_values("Fecha")
+
+    # ------------------------------------------------------
+    # CALCULOS
+    # ------------------------------------------------------
+
+    primer_registro = df.iloc[0]
+    ultimo_registro = df.iloc[-1]
+
+    precio_inicial = primer_registro["Precio unitario"]
+    precio_actual = ultimo_registro["Precio unitario"]
+
+    if precio_inicial != 0:
+        variacion = (
+            (precio_actual - precio_inicial) / precio_inicial
+        ) * 100
+    else:
+        variacion = 0
+
+    precio_promedio = df["Precio unitario"].mean()
+
+    # ------------------------------------------------------
+    # INDICADORES
+    # ------------------------------------------------------
+
+    st.markdown("### Indicadores de precio")
+
+    k1, k2, k3, k4 = st.columns(4)
+
+    with k1:
+        st.metric(
+            "Precio inicial",
+            f"{precio_inicial:,.4f} {moneda_precio}",
+            help="Primer precio unitario registrado en el período."
+        )
+
+    with k2:
+        st.metric(
+            "Último precio",
+            f"{precio_actual:,.4f} {moneda_precio}",
+            help="Último precio unitario registrado."
+        )
+
+    with k3:
+        st.metric(
+            "Variación acumulada",
+            f"{variacion:+.2f}%",
+            delta=f"{variacion:+.2f}%"
+        )
+
+    with k4:
+        st.metric(
+            "Precio promedio",
+            f"{precio_promedio:,.4f} {moneda_precio}"
+        )
+
+    st.caption(
+        f"Registros considerados: {len(df)} | "
+        f"Período: {df['Fecha'].min():%d-%m-%Y} "
+        f"al {df['Fecha'].max():%d-%m-%Y}"
+    )
+
+    # ------------------------------------------------------
+    # EVOLUCION DE PRECIOS
+    # ------------------------------------------------------
+
+    st.markdown("### 1. Evolución histórica del precio unitario")
+
+    df["Orden de compra"] = (
+        df["Orden de compra"].fillna("").astype(str)
+    )
+
+    df["Detalle OC"] = (
+        "OC: " + df["Orden de compra"] +
+        " | Posición: " + df["Posición"]
+    )
+
+    df["Fecha OC"] = pd.to_datetime(
+        df["Fecha OC"], errors="coerce"
+    )
 
     fig = px.line(
-        df_material.sort_values("Fecha"),
+        df.sort_values("Fecha"),
         x="Fecha",
         y="Precio unitario",
         markers=True,
-        hover_data=[
-            "Orden de compra",
-            "Posición",
-            "Precio original",
-            "Cantidad precio"
-        ],
-        title=f"Historial de precios - {moneda}",
+        hover_data={
+            "Orden de compra": True,
+            "Posición": True,
+            "Fecha OC": True,
+            "Precio original": True,
+            "Cantidad precio": True,
+            "Unidad": True,
+            "Fecha": True,
+            "Precio unitario": ":.4f"
+        },
+        title=f"Historial de precios ({moneda_precio})",
         color_discrete_sequence=["#2563EB"]
     )
 
     fig.update_layout(
         template="plotly_white",
         xaxis_title="Fecha de contabilización",
-        yaxis_title=f"Precio unitario ({moneda})"
+        yaxis_title=f"Precio unitario ({moneda_precio})",
+        hovermode="closest"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### Historial de órdenes de compra")
+    # ------------------------------------------------------
+    # COMPARACION FECHA OC Y CONTABILIZACION
+    # ------------------------------------------------------
 
-    columnas = [
-        "Fecha", "Orden de compra", "Posición",
-        "Precio original", "Cantidad precio",
-        "Precio unitario", "Moneda", "Unidad"
+    st.markdown("### 2. Fecha de OC versus fecha de contabilización")
+
+    comparacion_fechas = df.dropna(
+        subset=["Fecha OC", "Fecha"]
+    ).copy()
+
+    if not comparacion_fechas.empty:
+
+        comparacion_fechas["Días transcurridos"] = (
+            comparacion_fechas["Fecha"] -
+            comparacion_fechas["Fecha OC"]
+        ).dt.days
+
+        fig = px.scatter(
+            comparacion_fechas,
+            x="Fecha OC",
+            y="Fecha",
+            color="Precio unitario",
+            size="Cantidad precio",
+            hover_data=[
+                "Orden de compra",
+                "Posición",
+                "Precio unitario",
+                "Días transcurridos"
+            ],
+            title="Relación entre fechas de compra y contabilización",
+            color_continuous_scale="Blues"
+        )
+
+        fig.update_layout(
+            template="plotly_white",
+            xaxis_title="Fecha de creación de OC",
+            yaxis_title="Fecha de contabilización"
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.metric(
+            "Promedio de días entre ambas fechas",
+            f"{comparacion_fechas['Días transcurridos'].mean():.1f} días"
+        )
+
+    else:
+        st.info(
+            "No hay suficientes fechas de OC y contabilización "
+            "para realizar esta comparación."
+        )
+
+    # ------------------------------------------------------
+    # HISTORIAL DE COMPRAS
+    # ------------------------------------------------------
+
+    st.markdown("### 3. Historial de órdenes de compra")
+
+    historial = df.copy()
+
+    columnas_historial = [
+        "Fecha OC",
+        "Fecha",
+        "Orden de compra",
+        "Posición",
+        "Precio original",
+        "Cantidad precio",
+        "Precio unitario",
+        "Moneda",
+        "Unidad"
     ]
 
+    historial = historial.sort_values(
+        "Fecha", ascending=False
+    )
+
     st.dataframe(
-        df_material[columnas].sort_values("Fecha", ascending=False),
+        historial[columnas_historial].rename(columns={
+            "Fecha OC": "Fecha de OC",
+            "Fecha": "Fecha contabilización",
+            "Precio original": "Precio SAP",
+            "Cantidad precio": "Cantidad divisor",
+            "Precio unitario": "Precio unitario calculado",
+            "Unidad": "Unidad de medida"
+        }),
         use_container_width=True,
         hide_index=True
     )
+
+    # ------------------------------------------------------
+    # DESCARGA DEL HISTORIAL
+    # ------------------------------------------------------
+
+    csv = historial[columnas_historial].to_csv(
+        index=False,
+        sep=";",
+        decimal=",",
+        encoding="utf-8-sig"
+    )
+
+    st.download_button(
+        "Descargar historial de precios",
+        data=csv,
+        file_name=f"historial_precios_{material_precio}.csv",
+        mime="text/csv"
+    )
+
 
 
 

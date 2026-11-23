@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -161,6 +160,55 @@ def fecha_excel(serie):
         errors="coerce",
         dayfirst=True
     )
+
+
+def formato_numero(valor, decimales=0):
+    valor = numero(valor)
+    if pd.isna(valor):
+        return "0"
+    return f"{valor:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def selector_planta(titulo, key, incluir_todas=False):
+    opciones = (["Todas"] if incluir_todas else []) + list(PLANTAS.keys())
+    if key not in st.session_state or st.session_state[key] not in opciones:
+        st.session_state[key] = opciones[0]
+    st.markdown(f"**{titulo}**")
+    columnas = st.columns(len(opciones))
+    for i, opcion in enumerate(opciones):
+        with columnas[i]:
+            elegido = st.session_state[key] == opcion
+            if st.button(("✓ " if elegido else "") + opcion, key=f"{key}_boton_{i}",
+                         use_container_width=True,
+                         type="primary" if elegido else "secondary"):
+                st.session_state[key] = opcion
+                st.rerun()
+    return st.session_state[key]
+
+
+def selector_material(df, texto_busqueda, key):
+    if df.empty:
+        return None
+    catalogo = df[["Material", "Descripción"]].fillna("").drop_duplicates().copy()
+    catalogo["Material"] = catalogo["Material"].astype(str)
+    catalogo["Descripción"] = catalogo["Descripción"].astype(str)
+    catalogo = catalogo[catalogo["Material"].str.strip() != ""]
+    busqueda = st.text_input(texto_busqueda,
+        placeholder="Escribe el código o nombre de la materia prima...",
+        key=f"{key}_busqueda").strip().lower()
+    if busqueda:
+        catalogo = catalogo[
+            catalogo["Material"].str.lower().str.contains(busqueda, na=False)
+            | catalogo["Descripción"].str.lower().str.contains(busqueda, na=False)
+        ]
+    if catalogo.empty:
+        st.warning("No se encontraron materias primas con esa búsqueda.")
+        return None
+    opciones = {f"{r['Material']} — {r['Descripción']}".strip(" —"): r["Material"]
+                for _, r in catalogo.iterrows()}
+    etiqueta = st.selectbox("Seleccionar materia prima (código — nombre)",
+                            list(opciones.keys()), key=f"{key}_seleccion")
+    return opciones[etiqueta]
 
 
 # ==========================================================
@@ -496,11 +544,11 @@ with st.sidebar:
     pagina = st.radio(
         "NAVEGACIÓN",
         [
+            "Inventario y cobertura",
             "Resumen general",
             "Análisis por planta",
             "Consumo mensual",
-            "Evolución de precios",
-            "Inventario y cobertura"
+            "Evolución de precios"
         ]
     )
 
@@ -832,124 +880,55 @@ if pagina == "Resumen general":
 elif pagina == "Análisis por planta":
 
     st.markdown("## Análisis individual por planta")
+    planta = selector_planta("Seleccionar planta", "planta_analisis")
 
-    planta = st.selectbox(
-        "Seleccionar planta",
-        list(PLANTAS.keys())
-    )
+    df_c = consumos[(consumos["Planta"] == planta) &
+                    (consumos["Año"] == año_seleccionado)].copy() if not consumos.empty else pd.DataFrame()
+    df_p = precios[(precios["Planta"] == planta) &
+                   (precios["Año"] == año_seleccionado)].copy() if not precios.empty else pd.DataFrame()
 
-    df_c = consumos[
-        (consumos["Planta"] == planta) &
-        (consumos["Año"] == año_seleccionado)
-    ] if not consumos.empty else pd.DataFrame()
+    cantidad_materiales = df_c["Material"].nunique() if not df_c.empty else 0
+    st.metric("Materias primas", formato_numero(cantidad_materiales))
 
-    df_p = precios[
-        (precios["Planta"] == planta) &
-        (precios["Año"] == año_seleccionado)
-    ] if not precios.empty else pd.DataFrame()
-
-    st.markdown(f"### {planta}")
-
-    a, b, c = st.columns(3)
-
-    a.metric(
-        "Registros de consumo",
-        f"{len(df_c):,}"
-    )
-
-    b.metric(
-        "Materias primas consumidas",
-        str(df_c["Material"].nunique())
-        if not df_c.empty else "0"
-    )
-
-    c.metric(
-        "Órdenes con precio",
-        str(df_p["Orden de compra"].nunique())
-        if not df_p.empty else "0"
-    )
-
-    st.markdown("### Consumo mensual")
-
+    st.markdown("### Consumo mensual por materia prima")
     if not df_c.empty:
-
-        unidad = st.selectbox(
-            "Unidad de medida",
-            sorted(df_c["Unidad"].dropna().unique()),
-            key="unidad_planta_detalle"
-        )
-
-        grafico = (
-            df_c[df_c["Unidad"] == unidad]
-            .groupby(["Año", "Mes"], as_index=False)["Consumo"]
-            .sum()
-        )
-
-        grafico["Periodo"] = (
-            grafico["Año"].astype(str) + "-" +
-            grafico["Mes"].astype(str).str.zfill(2)
-        )
-
-        fig = px.bar(
-            grafico,
-            x="Periodo",
-            y="Consumo",
-            color_discrete_sequence=[COLORES[planta]]
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            yaxis_title=f"Consumo ({unidad})"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+        material = selector_material(df_c[["Material", "Descripción"]],
+            "Buscar por código o nombre de materia prima", "material_consumo_planta")
+        if material is not None:
+            detalle = df_c[df_c["Material"] == material].copy()
+            descripcion = detalle["Descripción"].iloc[0] if not detalle.empty else ""
+            st.markdown(f"**{material} — {descripcion}**")
+            unidad = st.selectbox("Unidad de medida",
+                sorted(detalle["Unidad"].dropna().unique()), key="unidad_planta_detalle")
+            grafico = detalle[detalle["Unidad"] == unidad].groupby(
+                ["Año", "Mes"], as_index=False)["Consumo"].sum()
+            grafico["Periodo"] = grafico["Mes"].map(MESES) + " " + grafico["Año"].astype(str)
+            fig = px.bar(grafico, x="Periodo", y="Consumo",
+                         color_discrete_sequence=[COLORES[planta]])
+            fig.update_traces(texttemplate="%{y:,.0f}", textposition="outside")
+            fig.update_layout(template="plotly_white",
+                              yaxis_title=f"Consumo ({unidad})", xaxis_title="Mes")
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No hay información de consumo para esta planta y año.")
 
     st.markdown("### Evolución de precios")
-
     if not df_p.empty:
-
-        material = st.selectbox(
-            "Materia prima",
-            sorted(df_p["Material"].unique()),
-            key="material_planta_precio"
-        )
-
-        seleccionado = df_p[
-            df_p["Material"] == material
-        ]
-
-        moneda = st.selectbox(
-            "Moneda",
-            sorted(seleccionado["Moneda"].dropna().unique()),
-            key="moneda_planta"
-        )
-
-        seleccionado = seleccionado[
-            seleccionado["Moneda"] == moneda
-        ]
-
-        fig = px.line(
-            seleccionado.sort_values("Fecha"),
-            x="Fecha",
-            y="Precio unitario",
-            markers=True
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            yaxis_title=f"Precio unitario ({moneda})"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
+        material_precio = selector_material(df_p[["Material", "Descripción"]],
+            "Buscar materia prima para revisar sus precios", "material_planta_precio")
+        if material_precio is not None:
+            seleccionado = df_p[df_p["Material"] == material_precio].copy()
+            monedas = sorted(seleccionado["Moneda"].dropna().unique())
+            if monedas:
+                moneda = st.selectbox("Moneda", monedas, key="moneda_planta")
+                seleccionado = seleccionado[seleccionado["Moneda"] == moneda].sort_values("Fecha")
+                fig = px.line(seleccionado, x="Fecha", y="Precio unitario", markers=True,
+                    hover_data=["Orden de compra", "Posición"],
+                    color_discrete_sequence=[COLORES[planta]])
+                fig.update_layout(template="plotly_white",
+                                  yaxis_title=f"Precio unitario ({moneda})")
+                st.plotly_chart(fig, use_container_width=True)
     else:
-
         st.info("No hay información de precios disponible.")
 
 
@@ -975,11 +954,7 @@ elif pagina == "Consumo mensual":
         st.warning("Carga los archivos de consumo SAP.")
         st.stop()
 
-    planta = st.selectbox(
-        "Seleccionar planta",
-        list(PLANTAS.keys()),
-        key="planta_consumo_detalle"
-    )
+    planta = selector_planta("Seleccionar planta", "planta_consumo_detalle")
 
     centro = PLANTAS[planta]
 
@@ -995,20 +970,16 @@ elif pagina == "Consumo mensual":
         datos_ns["Centro"] == centro
     ].copy() if not datos_ns.empty else pd.DataFrame()
 
-    materiales = sorted(
-        set(consumo_planta["Material"].tolist()) |
-        set(mrp_planta["Material"].tolist())
-    )
-
-    if not materiales:
-
-        st.warning("No hay materiales disponibles.")
+    catalogo_consumo = consumo_planta[["Material", "Descripción"]].drop_duplicates()
+    catalogo_mrp = (mrp_planta[["Material", "Descripción del material"]]
+        .rename(columns={"Descripción del material": "Descripción"}).drop_duplicates()
+        if not mrp_planta.empty else pd.DataFrame(columns=["Material", "Descripción"]))
+    catalogo_materiales = pd.concat([catalogo_consumo, catalogo_mrp],
+                                    ignore_index=True).drop_duplicates()
+    material = selector_material(catalogo_materiales,
+        "Buscar por código o nombre de materia prima", "material_consumo_detalle")
+    if material is None:
         st.stop()
-
-    material = st.selectbox(
-        "Buscar materia prima",
-        materiales
-    )
 
     historial = consumo_planta[
         consumo_planta["Material"] == material
@@ -1069,18 +1040,10 @@ elif pagina == "Consumo mensual":
 
         a, b, c, d = st.columns(4)
 
-        a.metric("Stock actual", f"{stock:,.2f} {unidad}")
-        b.metric("Stock seguridad", f"{seguridad:,.2f} {unidad}")
-        c.metric("Stock máximo", f"{maximo:,.2f} {unidad}")
-        d.metric("Cobertura", f"{cobertura:,.2f} meses")
-
-        if not registro_ns.empty:
-
-            clasificacion = registro_ns.iloc[0]["NS Corregido"]
-
-            st.info(
-                f"Clasificación de nivel de servicio: {clasificacion}"
-            )
+        a.metric("Stock actual", f"{formato_numero(stock)} {unidad}")
+        b.metric("Stock seguridad", f"{formato_numero(seguridad)} {unidad}")
+        c.metric("Stock máximo", f"{formato_numero(maximo)} {unidad}")
+        d.metric("Cobertura", f"{formato_numero(cobertura, 2)} meses")
 
     else:
 
@@ -1130,7 +1093,7 @@ elif pagina == "Consumo mensual":
 
         st.metric(
             "Consumo acumulado",
-            f"{historial['Consumo'].sum():,.2f} {unidad}"
+            f"{formato_numero(historial['Consumo'].sum())} {unidad}"
         )
 
     else:
@@ -1293,760 +1256,3 @@ elif pagina == "Consumo mensual":
         else:
 
             st.info("No existen movimientos disponibles.")
-
-
-# ==========================================================
-# 14. EVOLUCION DE PRECIOS Y RANKING
-# ==========================================================
-
-elif pagina == "Evolución de precios":
-
-    st.markdown("## Evolución y análisis de precios")
-
-    if precios.empty:
-
-        st.warning("Carga los archivos de precios SAP.")
-        st.stop()
-
-    # ------------------------------------------------------
-    # FILTRO DE PLANTA
-    # ------------------------------------------------------
-
-    planta_precio = st.selectbox(
-        "Seleccionar planta",
-        ["Todas"] + list(PLANTAS.keys()),
-        key="planta_precios"
-    )
-
-    datos = precios.copy()
-
-    if planta_precio != "Todas":
-
-        datos = datos[
-            datos["Planta"] == planta_precio
-        ]
-
-    datos = datos.dropna(
-        subset=["Fecha", "Precio unitario", "Moneda"]
-    )
-
-    # ------------------------------------------------------
-    # RANKING DE VARIACIONES
-    # ------------------------------------------------------
-
-    st.markdown("### Ranking de variaciones de precios")
-
-    st.caption(
-        f"Comparación entre el primer y último precio "
-        f"registrado durante {año_seleccionado}."
-    )
-
-    ranking_datos = datos[
-        datos["Año"] == año_seleccionado
-    ].copy()
-
-    resultados = []
-
-    if not ranking_datos.empty:
-
-        grupos = ranking_datos.groupby(
-            ["Planta", "Material", "Moneda"]
-        )
-
-        for (planta, material, moneda), grupo in grupos:
-
-            grupo = grupo.sort_values("Fecha")
-
-            if len(grupo) < 2:
-                continue
-
-            primero = grupo.iloc[0]
-            ultimo = grupo.iloc[-1]
-
-            inicial = primero["Precio unitario"]
-            final = ultimo["Precio unitario"]
-
-            if pd.isna(inicial) or inicial == 0:
-                continue
-
-            variacion = (
-                (final - inicial) / abs(inicial)
-            ) * 100
-
-            resultados.append({
-
-                "Planta": planta,
-                "Material": material,
-                "Descripción": ultimo["Descripción"],
-                "Moneda": moneda,
-                "Precio inicial": inicial,
-                "Último precio": final,
-                "Variación (%)": variacion,
-                "Fecha inicial": primero["Fecha"],
-                "Fecha final": ultimo["Fecha"],
-                "Registros": len(grupo)
-
-            })
-
-    ranking = pd.DataFrame(resultados)
-
-    if not ranking.empty:
-
-        aumentos = ranking[
-            ranking["Variación (%)"] > 0
-        ].sort_values(
-            "Variación (%)",
-            ascending=False
-        ).head(5)
-
-        disminuciones = ranking[
-            ranking["Variación (%)"] < 0
-        ].sort_values(
-            "Variación (%)",
-            ascending=True
-        ).head(5)
-
-        ca, cb = st.columns(2)
-
-        with ca:
-
-            st.markdown("#### 🔴 Mayores aumentos")
-
-            if not aumentos.empty:
-
-                st.dataframe(
-                    aumentos[[
-                        "Planta",
-                        "Material",
-                        "Descripción",
-                        "Moneda",
-                        "Precio inicial",
-                        "Último precio",
-                        "Variación (%)"
-                    ]].style.format({
-
-                        "Precio inicial": "{:,.4f}",
-                        "Último precio": "{:,.4f}",
-                        "Variación (%)": "{:+.2f}%"
-
-                    }),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            else:
-
-                st.info("No hay aumentos registrados.")
-
-        with cb:
-
-            st.markdown("#### 🟢 Mayores disminuciones")
-
-            if not disminuciones.empty:
-
-                st.dataframe(
-                    disminuciones[[
-                        "Planta",
-                        "Material",
-                        "Descripción",
-                        "Moneda",
-                        "Precio inicial",
-                        "Último precio",
-                        "Variación (%)"
-                    ]].style.format({
-
-                        "Precio inicial": "{:,.4f}",
-                        "Último precio": "{:,.4f}",
-                        "Variación (%)": "{:+.2f}%"
-
-                    }),
-                    use_container_width=True,
-                    hide_index=True
-                )
-
-            else:
-
-                st.info("No hay disminuciones registradas.")
-
-        st.markdown("### Comparación de variaciones")
-
-        grafico_ranking = pd.concat(
-            [aumentos, disminuciones],
-            ignore_index=True
-        )
-
-        if not grafico_ranking.empty:
-
-            fig = px.bar(
-                grafico_ranking,
-                x="Variación (%)",
-                y="Material",
-                color="Variación (%)",
-                orientation="h",
-                hover_data=[
-                    "Planta",
-                    "Descripción",
-                    "Moneda",
-                    "Precio inicial",
-                    "Último precio"
-                ],
-                color_continuous_scale="RdYlGn_r"
-            )
-
-            fig.update_layout(
-                template="plotly_white",
-                yaxis_title="Material",
-                xaxis_title="Variación porcentual"
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
-
-        with st.expander("Consultar ranking completo"):
-
-            st.dataframe(
-                ranking.sort_values(
-                    "Variación (%)",
-                    ascending=False
-                ),
-                use_container_width=True,
-                hide_index=True
-            )
-
-    else:
-
-        st.info(
-            "No existen suficientes registros para calcular variaciones."
-        )
-
-    st.divider()
-
-    # ------------------------------------------------------
-    # ANALISIS INDIVIDUAL DE PRECIOS
-    # ------------------------------------------------------
-
-    st.markdown("### Análisis individual de precios")
-
-    materiales = sorted(
-        datos["Material"].dropna().unique()
-    )
-
-    material = st.selectbox(
-        "Seleccionar materia prima",
-        materiales,
-        key="material_precio_individual"
-    )
-
-    df = datos[
-        datos["Material"] == material
-    ].copy()
-
-    descripcion = df["Descripción"].iloc[0]
-
-    st.markdown(f"#### {descripcion}")
-    st.caption(f"Código de material: {material}")
-
-    monedas = sorted(
-        df["Moneda"].dropna().unique()
-    )
-
-    moneda = st.selectbox(
-        "Moneda",
-        monedas,
-        key="moneda_precio_individual"
-    )
-
-    df = df[
-        df["Moneda"] == moneda
-    ].sort_values("Fecha")
-
-    if df.empty:
-
-        st.warning("No hay registros para esta moneda.")
-        st.stop()
-
-    # ------------------------------------------------------
-    # INDICADORES DE PRECIO
-    # ------------------------------------------------------
-
-    inicial = df.iloc[0]["Precio unitario"]
-    final = df.iloc[-1]["Precio unitario"]
-
-    promedio = df["Precio unitario"].mean()
-
-    variacion = (
-        (final - inicial) / abs(inicial) * 100
-        if inicial != 0 else 0
-    )
-
-    a, b, c, d = st.columns(4)
-
-    a.metric(
-        "Precio inicial",
-        f"{inicial:,.4f} {moneda}"
-    )
-
-    b.metric(
-        "Último precio",
-        f"{final:,.4f} {moneda}"
-    )
-
-    c.metric(
-        "Variación",
-        f"{variacion:+.2f}%"
-    )
-
-    d.metric(
-        "Precio promedio",
-        f"{promedio:,.4f} {moneda}"
-    )
-
-    st.caption(
-        f"Registros: {len(df)} | "
-        f"Período: {df['Fecha'].min():%d-%m-%Y} "
-        f"al {df['Fecha'].max():%d-%m-%Y}"
-    )
-
-    # ------------------------------------------------------
-    # GRAFICO DE PRECIOS
-    # ------------------------------------------------------
-
-    st.markdown("### 1. Evolución histórica del precio unitario")
-
-    fig = px.line(
-        df.sort_values("Fecha"),
-        x="Fecha",
-        y="Precio unitario",
-        markers=True,
-        hover_data=[
-            "Orden de compra",
-            "Posición",
-            "Fecha OC",
-            "Precio original",
-            "Cantidad precio",
-            "Unidad"
-        ],
-        color_discrete_sequence=["#2563EB"]
-    )
-
-    fig.update_layout(
-        template="plotly_white",
-        xaxis_title="Fecha de contabilización",
-        yaxis_title=f"Precio unitario ({moneda})",
-        hovermode="closest"
-    )
-
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
-
-    # ------------------------------------------------------
-    # FECHA OC VS CONTABILIZACION
-    # ------------------------------------------------------
-
-    st.markdown("### 2. Fecha de OC versus contabilización")
-
-    fechas = df.dropna(
-        subset=["Fecha OC", "Fecha"]
-    ).copy()
-
-    if not fechas.empty:
-
-        fechas["Días transcurridos"] = (
-            fechas["Fecha"] - fechas["Fecha OC"]
-        ).dt.days
-
-        fig = px.scatter(
-            fechas,
-            x="Fecha OC",
-            y="Fecha",
-            color="Precio unitario",
-            hover_data=[
-                "Orden de compra",
-                "Posición",
-                "Días transcurridos"
-            ],
-            color_continuous_scale="Blues"
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            xaxis_title="Fecha de OC",
-            yaxis_title="Fecha de contabilización"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-        st.metric(
-            "Promedio de días transcurridos",
-            f"{fechas['Días transcurridos'].mean():.1f} días"
-        )
-
-    else:
-
-        st.info("No existen fechas suficientes para comparar.")
-
-    # ------------------------------------------------------
-    # HISTORIAL DE OC
-    # ------------------------------------------------------
-
-    st.markdown("### 3. Historial de órdenes de compra")
-
-    columnas = [
-        "Fecha OC",
-        "Fecha",
-        "Orden de compra",
-        "Posición",
-        "Precio original",
-        "Cantidad precio",
-        "Precio unitario",
-        "Moneda",
-        "Unidad"
-    ]
-
-    historial = df.sort_values(
-        "Fecha",
-        ascending=False
-    )
-
-    st.dataframe(
-        historial[columnas].rename(columns={
-
-            "Fecha OC": "Fecha de OC",
-            "Fecha": "Fecha contabilización",
-            "Precio original": "Precio SAP",
-            "Cantidad precio": "Cantidad divisor",
-            "Precio unitario": "Precio unitario calculado",
-            "Unidad": "Unidad de medida"
-
-        }),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # ------------------------------------------------------
-    # DESCARGAR HISTORIAL
-    # ------------------------------------------------------
-
-    csv = historial[columnas].to_csv(
-        index=False,
-        sep=";",
-        decimal=",",
-        encoding="utf-8-sig"
-    )
-
-    st.download_button(
-        "Descargar historial de precios",
-        data=csv,
-        file_name=f"historial_precios_{material}.csv",
-        mime="text/csv"
-    )
-
-
-# ==========================================================
-# 15. INVENTARIO Y COBERTURA
-# ==========================================================
-
-elif pagina == "Inventario y cobertura":
-
-    st.markdown("## Inventario y cobertura")
-
-    if archivo_mrp is None:
-
-        st.warning("Carga el archivo MRP.")
-        st.stop()
-
-    if datos_ns.empty or datos_mrp.empty:
-
-        st.error("No fue posible procesar las hojas NS y MRP.")
-        st.stop()
-
-    planta = st.selectbox(
-        "Seleccionar planta",
-        ["Todas"] + list(PLANTAS.keys()),
-        key="planta_inventario"
-    )
-
-    datos = datos_ns.copy()
-
-    if planta != "Todas":
-
-        centro = PLANTAS[planta]
-
-        datos = datos[
-            datos["Centro"] == centro
-        ]
-
-    datos["Cob. [Meses]"] = pd.to_numeric(
-        datos["Cob. [Meses]"],
-        errors="coerce"
-    )
-
-    datos["Consumo X̅"] = pd.to_numeric(
-        datos["Consumo X̅"],
-        errors="coerce"
-    )
-
-    # ------------------------------------------------------
-    # INDICADORES
-    # ------------------------------------------------------
-
-    total = len(datos)
-
-    baja = len(
-        datos[
-            (datos["Cob. [Meses]"] >= 0) &
-            (datos["Cob. [Meses]"] < 1)
-        ]
-    )
-
-    sin_consumo = len(
-        datos[
-            datos["Consumo X̅"] == 0
-        ]
-    )
-
-    eb = (
-        datos["NS Corregido"] == "EB"
-    ).sum()
-
-    sb = (
-        datos["NS Corregido"] == "SB"
-    ).sum()
-
-    bb = (
-        datos["NS Corregido"] == "BB"
-    ).sum()
-
-    a, b, c, d = st.columns(4)
-
-    a.metric("Materias primas", f"{total:,}")
-    b.metric("Baja cobertura", f"{baja:,}")
-    c.metric("Sin consumo", f"{sin_consumo:,}")
-    d.metric("Clasificadas EB", f"{eb:,}")
-
-    # ------------------------------------------------------
-    # CLASIFICACION
-    # ------------------------------------------------------
-
-    st.markdown("### Clasificación del nivel de servicio")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        clasificacion = pd.DataFrame({
-
-            "Clasificación": ["EB", "SB", "BB"],
-            "Cantidad": [eb, sb, bb]
-
-        })
-
-        fig = px.pie(
-            clasificacion,
-            names="Clasificación",
-            values="Cantidad",
-            hole=0.60,
-            color="Clasificación",
-            color_discrete_map={
-                "EB": "#16A34A",
-                "SB": "#3B82F6",
-                "BB": "#DC4545"
-            }
-        )
-
-        fig.update_layout(
-            template="plotly_white"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    with col2:
-
-        distribucion = (
-            datos_ns.groupby(
-                ["Centro", "NS Corregido"]
-            )
-            .size()
-            .reset_index(name="Cantidad")
-        )
-
-        distribucion["Planta"] = (
-            distribucion["Centro"].map({
-                v: k for k, v in PLANTAS.items()
-            })
-        )
-
-        if planta != "Todas":
-
-            distribucion = distribucion[
-                distribucion["Planta"] == planta
-            ]
-
-        fig = px.bar(
-            distribucion,
-            x="Planta",
-            y="Cantidad",
-            color="NS Corregido",
-            barmode="group",
-            color_discrete_map={
-                "EB": "#16A34A",
-                "SB": "#3B82F6",
-                "BB": "#DC4545"
-            }
-        )
-
-        fig.update_layout(
-            template="plotly_white"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    # ------------------------------------------------------
-    # BAJA COBERTURA
-    # ------------------------------------------------------
-
-    st.markdown("### Top 5 materias primas con baja cobertura")
-
-    baja_df = datos[
-        (datos["Cob. [Meses]"] >= 0) &
-        (datos["Cob. [Meses]"] < 1)
-    ].nsmallest(
-        5,
-        "Cob. [Meses]"
-    )
-
-    columnas_ns = [
-        "Centro",
-        "Material",
-        "Descripción del material",
-        "UM",
-        "Cob. [Meses]",
-        "Consumo X̅",
-        "Stock Actual",
-        "Comentario MMPP"
-    ]
-
-    st.dataframe(
-        baja_df[columnas_ns],
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # ------------------------------------------------------
-    # SIN CONSUMO
-    # ------------------------------------------------------
-
-    st.markdown("### Top 5 materias primas sin consumo")
-
-    sin = datos[
-        datos["Consumo X̅"] == 0
-    ]
-
-    st.dataframe(
-        sin[columnas_ns].head(5),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # ------------------------------------------------------
-    # INVENTARIO
-    # ------------------------------------------------------
-
-    st.markdown("### Inventario por materia prima")
-
-    columnas_inventario = [
-        "Centro",
-        "Material",
-        "Descripción del material",
-        "UM",
-        "Stock Actual",
-        "Stock Seguridad",
-        "Stock Máximo",
-        "Cob. [Meses]",
-        "NS Corregido"
-    ]
-
-    st.dataframe(
-        datos[columnas_inventario],
-        use_container_width=True,
-        hide_index=True
-    )
-
-    # ------------------------------------------------------
-    # PLANIFICACION MRP
-    # ------------------------------------------------------
-
-    st.markdown("### Planificación MRP")
-
-    mrp = datos_mrp.copy()
-
-    if planta != "Todas":
-
-        mrp = mrp[
-            mrp["Centro"] == PLANTAS[planta]
-        ]
-
-    # Mostrar solamente filas principales de materiales.
-    mrp = mrp[
-        mrp["Material"].str.fullmatch(
-            r"\d+",
-            na=False
-        )
-    ]
-
-    mrp = mrp[
-        mrp["Concat"] ==
-        mrp["Centro"] + mrp["Material"]
-    ]
-
-    columnas_mrp = [
-
-        "Centro",
-        "Material",
-        "Descripción del material",
-        "UM",
-        "Stock Seguridad",
-        "Stock Máximo",
-        "Stock Actual",
-        "Consumo Proyectado",
-        "Stock Óptimo",
-        "Cobertura\n[Meses]"
-
-    ]
-
-    columnas_disponibles = [
-        c for c in columnas_mrp
-        if c in mrp.columns
-    ]
-
-    st.dataframe(
-        mrp[columnas_disponibles],
-        use_container_width=True,
-        hide_index=True
-    )
-
-
-# ==========================================================
-# 16. PIE DE PAGINA
-# ==========================================================
-
-st.divider()
-
-st.caption(
-    "ENAEX CHILE | Prototipo académico de gestión de materias primas "
-    "| Información sujeta a validación con SAP."
-)
-

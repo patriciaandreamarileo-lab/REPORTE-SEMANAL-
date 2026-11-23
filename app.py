@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -876,45 +875,260 @@ elif pagina == "Evolución de precios":
     )
 
 
+
 # ==========================================================
-# 5. INVENTARIO Y COBERTURA
+# 5. INVENTARIO, NIVEL DE SERVICIO Y COBERTURA
 # ==========================================================
 
 elif pagina == "Inventario y cobertura":
 
     st.markdown("## Inventario y cobertura")
+    st.caption("Indicadores de planificación y disponibilidad de materias primas")
 
-    st.info(
-        "Esta sección se conectará con las hojas MRP, Stock y NS "
-        "del archivo de planificación. Por ahora puedes cargar el "
-        "Excel MRP para incorporarlo en la siguiente etapa."
-    )
+    if archivo_mrp is None:
+        st.warning("Carga el archivo Planificación MRP desde el menú lateral.")
+        st.stop()
 
-    if archivo_mrp is not None:
+    try:
+        archivo_mrp.seek(0)
+        ns = pd.read_excel(
+            archivo_mrp,
+            sheet_name="NS",
+            header=9,
+            engine="openpyxl"
+        )
 
-        try:
-            stock = pd.read_excel(
-                archivo_mrp,
-                sheet_name="Stock",
-                header=4,
-                engine="openpyxl"
+        archivo_mrp.seek(0)
+        mrp = pd.read_excel(
+            archivo_mrp,
+            sheet_name="MRP",
+            header=7,
+            engine="openpyxl"
+        )
+
+        ns = ns.dropna(subset=["Centro", "Material"])
+        mrp = mrp.dropna(subset=["Centro", "Material"])
+
+        equivalencias = {
+            "E024": "Río Loa",
+            "E002": "Prillex",
+            "E026": "Punta Teatinos"
+        }
+
+        ns["Centro"] = ns["Centro"].astype(str).str.strip()
+        mrp["Centro"] = mrp["Centro"].astype(str).str.strip()
+
+        ns["Planta"] = ns["Centro"].map(equivalencias)
+        mrp["Planta"] = mrp["Centro"].map(equivalencias)
+
+        ns["Material"] = ns["Material"].astype(str).str.replace(r"\.0$", "", regex=True)
+
+        # Filtros
+        plantas_mrp = ["Todas"] + [
+            p for p in equivalencias.values()
+            if p in ns["Planta"].dropna().unique()
+        ]
+
+        planta_mrp = st.selectbox(
+            "Seleccionar planta",
+            plantas_mrp,
+            key="planta_inventario"
+        )
+
+        datos = ns.copy()
+
+        if planta_mrp != "Todas":
+            datos = datos[datos["Planta"] == planta_mrp]
+
+        # Indicadores
+        total_materiales = len(datos)
+
+        baja_cobertura = len(
+            datos[pd.to_numeric(datos["Cob. [Meses]"], errors="coerce") < 1]
+        )
+
+        sin_consumo = len(
+            datos[pd.to_numeric(datos["Consumo X̅"], errors="coerce") == 0]
+        )
+
+        eb = (datos["NS Corregido"] == "EB").sum()
+        sb = (datos["NS Corregido"] == "SB").sum()
+        bb = (datos["NS Corregido"] == "BB").sum()
+
+        st.markdown("### Indicadores principales")
+
+        a, b, c, d = st.columns(4)
+
+        a.metric("Materias primas", f"{total_materiales:,}")
+        b.metric("Baja cobertura", f"{baja_cobertura:,}")
+        c.metric("Sin consumo", f"{sin_consumo:,}")
+        d.metric("Clasificadas EB", f"{eb:,}")
+
+        st.markdown("### Clasificación del nivel de servicio")
+
+        col1, col2 = st.columns([1, 1])
+
+        with col1:
+            clasificacion = pd.DataFrame({
+                "Clasificación": ["EB", "SB", "BB"],
+                "Cantidad": [eb, sb, bb]
+            })
+
+            fig = px.pie(
+                clasificacion,
+                names="Clasificación",
+                values="Cantidad",
+                hole=0.60,
+                color="Clasificación",
+                color_discrete_map={
+                    "EB": "#16A34A",
+                    "SB": "#3B82F6",
+                    "BB": "#DC4545"
+                }
             )
 
-            st.success("Archivo MRP recibido correctamente.")
-
-            st.markdown("### Vista previa de la hoja Stock")
-
-            st.dataframe(
-                stock.head(100),
-                use_container_width=True,
-                hide_index=True
+            fig.update_layout(
+                template="plotly_white",
+                title="Materias primas por clasificación"
             )
 
-        except Exception as e:
-            st.error(f"No se pudo leer la hoja Stock: {e}")
+            st.plotly_chart(fig, use_container_width=True)
 
-    else:
-        st.warning("Carga el archivo de planificación MRP desde el menú lateral.")
+        with col2:
+            st.markdown("#### Distribución por planta")
+
+            distribucion = (
+                ns.groupby(["Planta", "NS Corregido"])
+                .size()
+                .reset_index(name="Cantidad")
+            )
+
+            fig = px.bar(
+                distribucion,
+                x="Planta",
+                y="Cantidad",
+                color="NS Corregido",
+                barmode="group",
+                color_discrete_map={
+                    "EB": "#16A34A",
+                    "SB": "#3B82F6",
+                    "BB": "#DC4545"
+                }
+            )
+
+            fig.update_layout(template="plotly_white")
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("### Top 5 MMPP con baja cobertura")
+
+        baja = datos.copy()
+        baja["Cob. [Meses]"] = pd.to_numeric(
+            baja["Cob. [Meses]"], errors="coerce"
+        )
+
+        baja = baja[
+            (baja["Cob. [Meses]"] >= 0) &
+            (baja["Cob. [Meses]"] < 1)
+        ].nsmallest(5, "Cob. [Meses]")
+
+        columnas = [
+            "Centro",
+            "Material",
+            "Descripción del material",
+            "Cob. [Meses]",
+            "Consumo X̅",
+            "Stock Actual",
+            "Comentario MMPP"
+        ]
+
+        st.dataframe(
+            baja[columnas],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("### Top 5 MMPP sin consumo")
+
+        sin = datos[
+            pd.to_numeric(datos["Consumo X̅"], errors="coerce") == 0
+        ].copy()
+
+        st.dataframe(
+            sin[columnas].head(5),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("### Inventario por materia prima")
+
+        materiales = datos[
+            [
+                "Material",
+                "Descripción del material",
+                "UM",
+                "Stock Actual",
+                "Stock Seguridad",
+                "Stock Máximo",
+                "Cob. [Meses]",
+                "NS Corregido"
+            ]
+        ].copy()
+
+        st.dataframe(
+            materiales,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.markdown("### Planificación MRP")
+
+        columnas_mrp = [
+            "Centro",
+            "Material",
+            "Descripción del material",
+            "UM",
+            "Stock Seguridad",
+            "Stock Máximo",
+            "Stock Actual",
+            "Consumo Proyectado",
+            "Stock Óptimo",
+            "Cobertura\n[Meses]"
+        ]
+
+        columnas_disponibles = [
+            c for c in columnas_mrp if c in mrp.columns
+        ]
+
+        mrp_filtrado = mrp.copy()
+
+        if planta_mrp != "Todas":
+            mrp_filtrado = mrp_filtrado[
+                mrp_filtrado["Planta"] == planta_mrp
+            ]
+
+        # Evitar filas auxiliares de comentarios y equivalencias
+        if "Concat" in mrp_filtrado.columns:
+            codigo = (
+                mrp_filtrado["Centro"].astype(str) +
+                mrp_filtrado["Material"].astype(str).str.replace(
+                    r"\.0$", "", regex=True
+                )
+            )
+
+            mrp_filtrado = mrp_filtrado[
+                mrp_filtrado["Concat"].astype(str) == codigo
+            ]
+
+        st.dataframe(
+            mrp_filtrado[columnas_disponibles],
+            use_container_width=True,
+            hide_index=True
+        )
+
+        st.success("Información MRP cargada correctamente.")
+
+    except Exception as e:
+        st.error(f"Error al procesar el archivo MRP: {e}")
 
 
 # ==========================================================

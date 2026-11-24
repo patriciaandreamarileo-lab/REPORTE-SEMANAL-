@@ -149,9 +149,17 @@ def fecha_excel(serie):
 
 
 def selector_planta(titulo, key, incluir_todas=False):
+
     opciones = (
         ["Todas"] if incluir_todas else []
     ) + list(PLANTAS.keys())
+
+    colores = {
+        "Río Loa": "#3985D6",
+        "Prillex": "#16A34A",
+        "Punta Teatinos": "#F59E0B",
+        "Todas": "#64748B"
+    }
 
     if (
         key not in st.session_state
@@ -159,22 +167,68 @@ def selector_planta(titulo, key, incluir_todas=False):
     ):
         st.session_state[key] = opciones[0]
 
-    st.markdown(f"**{titulo}**")
+    # Estilos de las cajitas de selección.
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{key}_colores div[data-testid="column"]:nth-child(1)
+        button {{
+            background-color: {colores[opciones[0]]};
+            color: white;
+            border: 2px solid {colores[opciones[0]]};
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
-    cols = st.columns(len(opciones))
+    # Aplicar el color correspondiente a cada planta.
+    with st.container(key=f"{key}_colores"):
 
-    for i, opcion in enumerate(opciones):
-        with cols[i]:
-            activo = st.session_state[key] == opcion
+        st.markdown(f"**{titulo}**")
 
-            if st.button(
-                ("✓ " if activo else "") + opcion,
-                key=f"{key}_btn_{i}",
-                use_container_width=True,
-                type="primary" if activo else "secondary"
-            ):
-                st.session_state[key] = opcion
-                st.rerun()
+        cols = st.columns(len(opciones))
+
+        for i, opcion in enumerate(opciones):
+
+            with cols[i]:
+
+                activo = (
+                    st.session_state[key] == opcion
+                )
+
+                color = colores[opcion]
+
+                st.markdown(
+                    f"""
+                    <style>
+                    .st-key-{key}_colores
+                    div[data-testid="column"]:nth-child({i+1})
+                    button {{
+                        background-color: {color};
+                        color: white;
+                        border: 2px solid {color};
+                        font-weight: 600;
+                    }}
+                    .st-key-{key}_colores
+                    div[data-testid="column"]:nth-child({i+1})
+                    button:hover {{
+                        filter: brightness(0.90);
+                        color: white;
+                        border-color: {color};
+                    }}
+                    </style>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                if st.button(
+                    ("✓ " if activo else "") + opcion,
+                    key=f"{key}_btn_{i}",
+                    use_container_width=True
+                ):
+                    st.session_state[key] = opcion
+                    st.rerun()
 
     return st.session_state[key]
 
@@ -1148,6 +1202,103 @@ elif pagina == "Análisis por planta":
             )
 
 
+# ==================================================
+# ALERTAS DESTACADAS DE COBERTURA
+# ==================================================
+
+st.markdown(
+    "### Alertas de cobertura inferior a 10 días"
+)
+
+if "Cobertura días" in datos.columns:
+
+    alertas = datos[
+        datos["Cobertura días"].notna()
+        & (datos["Cobertura días"] >= 0)
+        & (datos["Cobertura días"] < 10)
+    ].sort_values("Cobertura días")
+
+    if not alertas.empty:
+
+        st.markdown(
+            f"""
+            <div style="
+                background-color: #FCE8E8;
+                border-left: 6px solid #D97777;
+                border-radius: 9px;
+                padding: 15px 18px;
+                margin: 8px 0 15px 0;
+            ">
+                <div style="
+                    color: #9F3333;
+                    font-size: 18px;
+                    font-weight: 700;
+                ">
+                    ⚠️ Atención: {len(alertas)} materias primas
+                </div>
+                <div style="
+                    color: #873B3B;
+                    font-size: 14px;
+                    margin-top: 5px;
+                ">
+                    Se identificaron materiales con menos de
+                    10 días de cobertura. Se recomienda revisar
+                    su planificación y abastecimiento.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        cols_alerta = [
+            "Material",
+            "Descripción del material",
+            "UM",
+            "Stock Actual",
+            "Cobertura días",
+            "NS",
+            "Comentario MMPP"
+        ]
+
+        cols_alerta = [
+            x for x in cols_alerta
+            if x in alertas.columns
+        ]
+
+        tabla_alertas = alertas[cols_alerta].rename(
+            columns={
+                "Material": "Código",
+                "Descripción del material": "Descripción",
+                "UM": "Unidad",
+                "Cobertura días": "Cobertura (días)",
+                "NS": "Nivel de servicio",
+                "Comentario MMPP": "Comentario"
+            }
+        )
+
+        st.dataframe(
+            tabla_alertas.style.format({
+                "Stock Actual": lambda x: formato_numero(x),
+                "Cobertura (días)": lambda x: formato_numero(x, 1)
+            }),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.success(
+            "No hay materias primas con menos de 10 días de cobertura."
+        )
+
+else:
+
+    st.info(
+        "No se pudo calcular la cobertura en días."
+    )
+
+st.divider()
+
             # ----------------------------------------------
             # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
             # ----------------------------------------------
@@ -1225,12 +1376,11 @@ elif pagina == "Análisis por planta":
                     else "—"
                 )
 
+# ----------------------------------------------
+# 5 MATERIAS PRIMAS CON MENOR STOCK
+# ----------------------------------------------
 
-            # ----------------------------------------------
-            # 5 MATERIAS PRIMAS CON MENOR STOCK
-            # ----------------------------------------------
-
-            st.markdown(
+          st.markdown(
                 "### 5 materias primas con menor stock actual"
             )
 
@@ -1472,185 +1622,6 @@ elif pagina == "Análisis por planta":
                 )
 
 
-    # ======================================================
-    # CONSUMO Y PRECIOS COMO ANÁLISIS COMPLEMENTARIOS
-    # ======================================================
-
-    st.divider()
-
-    if not consumos.empty:
-
-        df_c = consumos[
-            (consumos["Planta"] == planta)
-            & (consumos["Año"] == anio_seleccionado)
-        ].copy()
-
-    else:
-
-        df_c = pd.DataFrame()
-
-
-    st.markdown(
-        "### Consumo mensual por materia prima"
-    )
-
-    if not df_c.empty:
-
-        material_c = selector_material(
-            df_c[["Material", "Descripción"]],
-            "Buscar materia prima para revisar su consumo",
-            "material_consumo_planta"
-        )
-
-        if material_c is not None:
-
-            detalle = df_c[
-                df_c["Material"] == material_c
-            ].copy()
-
-            unidades = sorted(
-                detalle["Unidad"]
-                .dropna()
-                .astype(str)
-                .unique()
-            )
-
-            if unidades:
-
-                unidad = st.selectbox(
-                    "Unidad de medida",
-                    unidades,
-                    key="unidad_planta_consumo"
-                )
-
-                graf = (
-                    detalle[
-                        detalle["Unidad"].astype(str) == unidad
-                    ]
-                    .groupby(
-                        ["Año", "Mes"],
-                        as_index=False
-                    )["Consumo"]
-                    .sum()
-                )
-
-                graf["Periodo"] = (
-                    graf["Mes"].map(MESES)
-                    + " "
-                    + graf["Año"].astype(str)
-                )
-
-                graf["Orden"] = (
-                    graf["Año"] * 100 + graf["Mes"]
-                )
-
-                graf = graf.sort_values("Orden")
-
-                fig = px.bar(
-                    graf,
-                    x="Periodo",
-                    y="Consumo",
-                    color_discrete_sequence=[COLORES[planta]]
-                )
-
-                fig.update_layout(
-                    template="plotly_white",
-                    xaxis_title="Mes",
-                    yaxis_title=f"Consumo ({unidad})"
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True
-                )
-
-    else:
-
-        st.info(
-            "No hay información de consumo para esta planta y año."
-        )
-
-
-    # ----------------------------------------------
-    # EVOLUCIÓN DE PRECIOS POR PLANTA
-    # ----------------------------------------------
-
-    if not precios.empty:
-
-        df_p = precios[
-            (precios["Planta"] == planta)
-            & (precios["Año"] == anio_seleccionado)
-        ].copy()
-
-    else:
-
-        df_p = pd.DataFrame()
-
-
-    st.markdown("### Evolución de precios")
-
-    if not df_p.empty:
-
-        material_p = selector_material(
-            df_p[["Material", "Descripción"]],
-            "Buscar materia prima para revisar sus precios",
-            "material_planta_precio"
-        )
-
-        if material_p is not None:
-
-            seleccionado = df_p[
-                df_p["Material"] == material_p
-            ].copy()
-
-            monedas = sorted(
-                seleccionado["Moneda"]
-                .dropna()
-                .astype(str)
-                .unique()
-            )
-
-            if monedas:
-
-                moneda = st.selectbox(
-                    "Moneda",
-                    monedas,
-                    key="moneda_planta_precio"
-                )
-
-                seleccionado = seleccionado[
-                    seleccionado["Moneda"] == moneda
-                ].sort_values("Fecha")
-
-                fig = px.line(
-                    seleccionado,
-                    x="Fecha",
-                    y="Precio unitario",
-                    markers=True,
-                    hover_data=[
-                        "Orden de compra",
-                        "Posición"
-                    ],
-                    color_discrete_sequence=[COLORES[planta]]
-                )
-
-                fig.update_layout(
-                    template="plotly_white",
-                    yaxis_title=f"Precio unitario ({moneda})"
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True
-                )
-
-    else:
-
-        st.info(
-            "No hay información de precios para esta planta y año."
-        )
-
-
 # ==========================================================
 # 12. CONSUMO MENSUAL
 # ==========================================================
@@ -1860,11 +1831,11 @@ elif pagina == "Evolución de precios":
 
         st.stop()
 
-    planta_precio = st.selectbox(
-        "Seleccionar planta",
-        ["Todas"] + list(PLANTAS.keys()),
-        key="planta_precios"
-    )
+planta_precio = selector_planta(
+    "Seleccionar planta",
+    "planta_precios",
+    incluir_todas=True
+)
 
     datos = precios.copy()
 

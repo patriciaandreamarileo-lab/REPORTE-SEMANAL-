@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1391,47 +1390,42 @@ elif pagina == "Consumo mensual":
 
 elif pagina == "Evolución de precios":
 
-    st.markdown(
-        "## Evolución y análisis de precios"
-    )
+    st.markdown("## Evolución y análisis de precios")
 
     if precios.empty:
-
-        st.warning(
-            "No se encontraron archivos de precios SAP."
-        )
-
+        st.warning("No se encontraron archivos de precios SAP.")
         st.stop()
 
-    planta_precio = st.selectbox(
+    # ------------------------------------------------------
+    # SELECTOR DE PLANTAS
+    # ------------------------------------------------------
+
+    planta_precio = selector_planta(
         "Seleccionar planta",
-        ["Todas"] + list(PLANTAS.keys()),
-        key="planta_precios"
+        "planta_precios",
+        incluir_todas=True
     )
 
     datos = precios.copy()
 
     if planta_precio != "Todas":
-
         datos = datos[
             datos["Planta"] == planta_precio
-        ]
+        ].copy()
 
     datos = datos.dropna(
-        subset=[
-            "Fecha",
-            "Precio unitario",
-            "Moneda"
-        ]
+        subset=["Fecha", "Precio unitario", "Moneda"]
     )
+
+    if datos.empty:
+        st.info("No hay precios disponibles para esta selección.")
+        st.stop()
 
     # ------------------------------------------------------
     # RANKING DE VARIACIONES
     # ------------------------------------------------------
 
-    st.markdown(
-        "### Ranking de variaciones de precios"
-    )
+    st.markdown("### Ranking de variaciones de precios")
 
     st.caption(
         f"Comparación entre el primer y último precio "
@@ -1456,9 +1450,7 @@ elif pagina == "Evolución de precios":
             moneda_grupo
         ), grupo in grupos:
 
-            grupo = grupo.sort_values(
-                "Fecha"
-            )
+            grupo = grupo.sort_values("Fecha")
 
             if len(grupo) < 2:
                 continue
@@ -1477,7 +1469,6 @@ elif pagina == "Evolución de precios":
             ) * 100
 
             resultados.append({
-
                 "Planta": planta_grupo,
                 "Material": material_grupo,
                 "Descripción": ultimo["Descripción"],
@@ -1485,15 +1476,10 @@ elif pagina == "Evolución de precios":
                 "Precio inicial": inicial,
                 "Último precio": final,
                 "Variación (%)": variacion,
-                "Fecha inicial": primero["Fecha"],
-                "Fecha final": ultimo["Fecha"],
                 "Registros": len(grupo)
-
             })
 
-    ranking = pd.DataFrame(
-        resultados
-    )
+    ranking = pd.DataFrame(resultados)
 
     if not ranking.empty:
 
@@ -1515,9 +1501,7 @@ elif pagina == "Evolución de precios":
 
         with ca:
 
-            st.markdown(
-                "#### Mayores aumentos"
-            )
+            st.markdown("#### Mayores aumentos")
 
             if not aumentos.empty:
 
@@ -1531,27 +1515,20 @@ elif pagina == "Evolución de precios":
                         "Último precio",
                         "Variación (%)"
                     ]].style.format({
-
                         "Precio inicial": lambda x: formato_numero(x, 2),
                         "Último precio": lambda x: formato_numero(x, 2),
                         "Variación (%)": "{:+.2f}%"
-
                     }),
                     use_container_width=True,
                     hide_index=True
                 )
 
             else:
-
-                st.info(
-                    "No hay aumentos registrados."
-                )
+                st.info("No hay aumentos registrados.")
 
         with cb:
 
-            st.markdown(
-                "#### Mayores disminuciones"
-            )
+            st.markdown("#### Mayores disminuciones")
 
             if not disminuciones.empty:
 
@@ -1565,25 +1542,18 @@ elif pagina == "Evolución de precios":
                         "Último precio",
                         "Variación (%)"
                     ]].style.format({
-
                         "Precio inicial": lambda x: formato_numero(x, 2),
                         "Último precio": lambda x: formato_numero(x, 2),
                         "Variación (%)": "{:+.2f}%"
-
                     }),
                     use_container_width=True,
                     hide_index=True
                 )
 
             else:
+                st.info("No hay disminuciones registradas.")
 
-                st.info(
-                    "No hay disminuciones registradas."
-                )
-
-        st.markdown(
-            "### Comparación de variaciones"
-        )
+        st.markdown("### Comparación de variaciones")
 
         grafico_ranking = pd.concat(
             [aumentos, disminuciones],
@@ -1619,9 +1589,7 @@ elif pagina == "Evolución de precios":
                 use_container_width=True
             )
 
-        with st.expander(
-            "Consultar ranking completo"
-        ):
+        with st.expander("Consultar ranking completo"):
 
             st.dataframe(
                 ranking.sort_values(
@@ -1644,27 +1612,22 @@ elif pagina == "Evolución de precios":
     # ANÁLISIS INDIVIDUAL DE PRECIOS
     # ------------------------------------------------------
 
-    st.markdown(
-        "### Análisis individual de precios"
+    st.markdown("### Análisis individual de precios")
+
+    catalogo_precios = (
+        datos[["Material", "Descripción"]]
+        .drop_duplicates()
+        .copy()
     )
 
-    materiales_precio = sorted(
-        datos["Material"].dropna().unique()
+    material = selector_material(
+        catalogo_precios,
+        "Buscar materia prima por código o nombre",
+        "material_precio_individual"
     )
 
-    if not materiales_precio:
-
-        st.warning(
-            "No hay materiales con precios disponibles."
-        )
-
+    if material is None:
         st.stop()
-
-    material = st.selectbox(
-        "Seleccionar materia prima",
-        materiales_precio,
-        key="material_precio_individual"
-    )
 
     df = datos[
         datos["Material"] == material
@@ -1676,17 +1639,15 @@ elif pagina == "Evolución de precios":
         else ""
     )
 
-    st.markdown(
-        f"#### {descripcion}"
-    )
-
-    st.caption(
-        f"Código de material: {material}"
-    )
+    st.markdown(f"#### {material} — {descripcion}")
 
     monedas = sorted(
         df["Moneda"].dropna().unique()
     )
+
+    if not monedas:
+        st.warning("No hay monedas disponibles para este material.")
+        st.stop()
 
     moneda = st.selectbox(
         "Moneda",
@@ -1696,17 +1657,15 @@ elif pagina == "Evolución de precios":
 
     df = df[
         df["Moneda"] == moneda
-    ].sort_values(
-        "Fecha"
-    )
+    ].sort_values("Fecha")
 
     if df.empty:
-
-        st.warning(
-            "No hay registros para esta moneda."
-        )
-
+        st.warning("No hay registros para esta moneda.")
         st.stop()
+
+    # ------------------------------------------------------
+    # INDICADORES DE PRECIO
+    # ------------------------------------------------------
 
     inicial = df.iloc[0]["Precio unitario"]
     final = df.iloc[-1]["Precio unitario"]
@@ -1714,8 +1673,7 @@ elif pagina == "Evolución de precios":
 
     variacion = (
         (final - inicial) / abs(inicial) * 100
-        if inicial != 0
-        else 0
+        if inicial != 0 else 0
     )
 
     a, b, c, d = st.columns(4)
@@ -1747,12 +1705,10 @@ elif pagina == "Evolución de precios":
     )
 
     # ------------------------------------------------------
-    # GRÁFICO DE EVOLUCIÓN
+    # GRÁFICO DE EVOLUCIÓN DE PRECIOS
     # ------------------------------------------------------
 
-    st.markdown(
-        "### Evolución histórica del precio unitario"
-    )
+    st.markdown("### Evolución histórica del precio unitario")
 
     fig = px.line(
         df.sort_values("Fecha"),
@@ -1783,33 +1739,26 @@ elif pagina == "Evolución de precios":
     )
 
     # ------------------------------------------------------
-    # VARIACIÓN ACUMULADA DEBAJO DEL GRÁFICO
+    # VARIACIÓN ACUMULADA
     # ------------------------------------------------------
 
-    primer_precio = df.iloc[0]["Precio unitario"]
-    ultimo_precio = df.iloc[-1]["Precio unitario"]
+    st.markdown("### Variación acumulada del precio")
 
     variacion_acumulada = (
-        (ultimo_precio - primer_precio)
-        / abs(primer_precio) * 100
-        if primer_precio != 0
-        else 0
-    )
-
-    st.markdown(
-        "### Variación acumulada del precio"
+        (final - inicial) / abs(inicial) * 100
+        if inicial != 0 else 0
     )
 
     k1, k2, k3 = st.columns(3)
 
     k1.metric(
         "Primer precio registrado",
-        f"{formato_numero(primer_precio, 2)} {moneda}"
+        f"{formato_numero(inicial, 2)} {moneda}"
     )
 
     k2.metric(
         "Último precio registrado",
-        f"{formato_numero(ultimo_precio, 2)} {moneda}"
+        f"{formato_numero(final, 2)} {moneda}"
     )
 
     k3.metric(
@@ -1818,15 +1767,14 @@ elif pagina == "Evolución de precios":
     )
 
     # ------------------------------------------------------
-    # HISTORIAL DE ÓRDENES DE COMPRA
+    # ÚNICO HISTORIAL DE ÓRDENES DE COMPRA
     # ------------------------------------------------------
 
-    st.markdown(
-        "### Historial de órdenes de compra"
-    )
+    st.markdown("### Historial detallado de órdenes de compra")
 
     columnas_historial = [
         "Fecha OC",
+        "Fecha",
         "Orden de compra",
         "Posición",
         "Material",
@@ -1835,8 +1783,7 @@ elif pagina == "Evolución de precios":
         "Unidad",
         "Precio original",
         "Precio unitario",
-        "Moneda",
-        "Fecha"
+        "Moneda"
     ]
 
     historial = df.sort_values(
@@ -1844,131 +1791,33 @@ elif pagina == "Evolución de precios":
         ascending=False
     ).copy()
 
-    historial = historial[
-        columnas_historial
-    ].rename(columns={
-
-        "Fecha OC": "FECHA OC",
-        "Orden de compra": "Pedido",
-        "Posición": "POSICIÓN",
-        "Descripción": "Descripción material",
-        "Cantidad precio": "CANTIDAD",
-        "Unidad": "UNIDAD",
-        "Precio original": "PRECIO",
-        "Precio unitario": "PRECIO UNITARIO",
-        "Moneda": "MONEDA",
-        "Fecha": "FECHA CONTABILIZACIÓN"
-
-    })
+    historial = historial[columnas_historial].rename(
+        columns={
+            "Fecha OC": "Fecha de OC",
+            "Fecha": "Fecha contabilización",
+            "Orden de compra": "Orden de compra",
+            "Posición": "Posición",
+            "Material": "Código material",
+            "Descripción": "Descripción material",
+            "Cantidad precio": "Cantidad divisor",
+            "Unidad": "Unidad de medida",
+            "Precio original": "Precio SAP",
+            "Precio unitario": "Precio unitario calculado",
+            "Moneda": "Moneda"
+        }
+    )
 
     st.dataframe(
         historial.style.format({
-
-            "PRECIO": lambda x: formato_numero(x, 2),
-            "PRECIO UNITARIO": lambda x: formato_numero(x, 2),
-            "CANTIDAD": lambda x: formato_numero(x, 2)
-
+            "Cantidad divisor": lambda x: formato_numero(x, 2),
+            "Precio SAP": lambda x: formato_numero(x, 2),
+            "Precio unitario calculado": lambda x: formato_numero(x, 2)
         }),
         use_container_width=True,
         hide_index=True
     )
 
-    # ------------------------------------------------------
-    # FECHA OC VERSUS CONTABILIZACIÓN
-    # ------------------------------------------------------
-
-    st.markdown(
-        "### Fecha de OC versus contabilización"
-    )
-
-    fechas = df.dropna(
-        subset=["Fecha OC", "Fecha"]
-    ).copy()
-
-    if not fechas.empty:
-
-        fechas["Días transcurridos"] = (
-            fechas["Fecha"] - fechas["Fecha OC"]
-        ).dt.days
-
-        fig = px.scatter(
-            fechas,
-            x="Fecha OC",
-            y="Fecha",
-            color="Precio unitario",
-            hover_data=[
-                "Orden de compra",
-                "Posición",
-                "Días transcurridos"
-            ],
-            color_continuous_scale="Blues"
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            xaxis_title="Fecha de OC",
-            yaxis_title="Fecha de contabilización"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-        st.metric(
-            "Promedio de días transcurridos",
-            f"{fechas['Días transcurridos'].mean():.1f} días"
-        )
-
-    else:
-
-        st.info(
-            "No existen fechas suficientes para comparar."
-        )
-
-    # ------------------------------------------------------
-    # DESCARGA DEL HISTORIAL
-    # ------------------------------------------------------
-
-    columnas_descarga = [
-        "Fecha OC",
-        "Fecha",
-        "Orden de compra",
-        "Posición",
-        "Precio original",
-        "Cantidad precio",
-        "Precio unitario",
-        "Moneda",
-        "Unidad"
-    ]
-
-    historial_descarga = df.sort_values(
-        "Fecha",
-        ascending=False
-    )
-
-    st.markdown(
-        "### Historial detallado de órdenes de compra"
-    )
-
-    st.dataframe(
-        historial_descarga[columnas_descarga].rename(columns={
-
-            "Fecha OC": "Fecha de OC",
-            "Fecha": "Fecha contabilización",
-            "Precio original": "Precio SAP",
-            "Cantidad precio": "Cantidad divisor",
-            "Precio unitario": "Precio unitario calculado",
-            "Unidad": "Unidad de medida"
-
-        }),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    csv = historial_descarga[
-        columnas_descarga
-    ].to_csv(
+    csv = historial.to_csv(
         index=False,
         sep=";",
         decimal=",",
@@ -1981,6 +1830,7 @@ elif pagina == "Evolución de precios":
         file_name=f"historial_precios_{material}.csv",
         mime="text/csv"
     )
+
 
 
 # ==========================================================

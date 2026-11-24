@@ -1319,62 +1319,62 @@ with col1:
             "Cantidad": [eb, sb, bb]
                  })
 
-                    fig = px.pie(
-                        clasificacion,
-                        names="Clasificación",
-                        values="Cantidad",
-                        hole=0.58,
-                        color="Clasificación",
-                        color_discrete_map={
-                            "EB": "#16A34A",
-                            "SB": "#3B82F6",
-                            "BB": "#DC4545"
-                        }
-                    )
+    fig = px.pie(
+     clasificacion,
+     names="Clasificación",
+     values="Cantidad",
+     hole=0.58,
+     color="Clasificación",
+     color_discrete_map={
+  "EB": "#16A34A",
+  "SB": "#3B82F6",
+  "BB": "#DC4545"
+ }
+ )
 
-                    fig.update_layout(
-                        template="plotly_white"
-                    )
+ fig.update_layout(
+  template="plotly_white"
+ )
 
-                    st.plotly_chart(
-                        fig,
-                        use_container_width=True
-                    )
+  st.plotly_chart(
+ fig,
+  use_container_width=True
+  )
 
-                else:
+else:
 
-                    st.info(
-                        "No hay materiales clasificados EB, SB o BB."
-                    )
+ st.info(
+ "No hay materiales clasificados EB, SB o BB."
+  )
 
-            with col2:
+ with col2:
 
-                st.markdown(
-                    "### Resumen de inventario"
-                )
+  st.markdown(
+  "### Resumen de inventario"
+ )
 
-                st.metric(
-                    "Materias primas",
-                    formato_numero(len(datos))
-                )
+ st.metric(
+    "Materias primas",
+  formato_numero(len(datos))
+)
 
-                st.metric(
-                    "Stock total registrado",
-                    formato_numero(
-                        datos["Stock Actual"].sum()
-                    )
-                    if "Stock Actual" in datos.columns
-                    else "—"
-                )
+ st.metric(
+ "Stock total registrado",
+ formato_numero(
+ datos["Stock Actual"].sum()
+  )
+ if "Stock Actual" in datos.columns
+  else "—"
+ )
 
-                st.metric(
-                    "Materiales con cobertura menor a 10 días",
-                    formato_numero(
-                        (datos["Cobertura días"] < 10).sum()
-                    )
-                    if "Cobertura días" in datos.columns
-                    else "—"
-                )
+  st.metric(
+  "Materiales con cobertura menor a 10 días",
+   formato_numero(
+ (datos["Cobertura días"] < 10).sum()
+   )
+ if "Cobertura días" in datos.columns
+ else "—"
+)
 # ----------------------------------------------
 # 5 MATERIAS PRIMAS CON MENOR STOCK
 # ----------------------------------------------

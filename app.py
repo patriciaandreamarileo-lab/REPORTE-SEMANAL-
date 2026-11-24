@@ -1303,6 +1303,10 @@ st.divider()
             # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
             # ----------------------------------------------
 
+                       # ----------------------------------------------
+            # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
+            # ----------------------------------------------
+
             col1, col2 = st.columns(2)
 
             with col1:
@@ -1346,7 +1350,6 @@ st.divider()
                         "No hay materiales clasificados EB, SB o BB."
                     )
 
-
             with col2:
 
                 st.markdown(
@@ -1375,7 +1378,6 @@ st.divider()
                     if "Cobertura días" in datos.columns
                     else "—"
                 )
-
 # ----------------------------------------------
 # 5 MATERIAS PRIMAS CON MENOR STOCK
 # ----------------------------------------------

@@ -1299,28 +1299,25 @@ else:
 
 st.divider()
 
-            # ----------------------------------------------
-            # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
-            # ----------------------------------------------
+         
+# ----------------------------------------------
+# DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
+# ----------------------------------------------
 
-                       # ----------------------------------------------
-            # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
-            # ----------------------------------------------
+col1, col2 = st.columns(2)
 
-            col1, col2 = st.columns(2)
+with col1:
 
-            with col1:
-
-                st.markdown(
-                    "### Distribución del nivel de servicio"
+    st.markdown(
+       "### Distribución del nivel de servicio"
                 )
 
-                if total_ns:
+    if total_ns:
 
-                    clasificacion = pd.DataFrame({
-                        "Clasificación": ["EB", "SB", "BB"],
-                        "Cantidad": [eb, sb, bb]
-                    })
+        clasificacion = pd.DataFrame({
+         "Clasificación": ["EB", "SB", "BB"],
+            "Cantidad": [eb, sb, bb]
+                 })
 
                     fig = px.pie(
                         clasificacion,

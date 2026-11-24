@@ -1,12 +1,14 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 
 # ==========================================================
-# 1. CONFIGURACION GENERAL
+# 1. CONFIGURACIÓN GENERAL
 # ==========================================================
 
 st.set_page_config(
@@ -24,8 +26,8 @@ PLANTAS = {
 
 COLORES = {
     "Río Loa": "#3985D6",
-    "Prillex": "#16A34A",
-    "Punta Teatinos": "#F59E0B"
+    "Prillex": "#F4C542",
+    "Punta Teatinos": "#16A34A"
 }
 
 MESES = {
@@ -35,9 +37,8 @@ MESES = {
     10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-
 # ==========================================================
-# 2. ESTILO VISUAL
+# 2. ESTILOS
 # ==========================================================
 
 st.markdown("""
@@ -74,6 +75,35 @@ div[data-testid="stMetric"] {
     border: 1px solid #E2E8F0;
 }
 
+/* Selector de plantas: Río Loa azul */
+div[class*="planta_analisis_boton_0"] button,
+div[class*="planta_consumo_detalle_boton_0"] button {
+    background-color: #3985D6 !important;
+    border-color: #3985D6 !important;
+    color: white !important;
+}
+
+/* Selector de plantas: Prillex amarillo */
+div[class*="planta_analisis_boton_1"] button,
+div[class*="planta_consumo_detalle_boton_1"] button {
+    background-color: #F4C542 !important;
+    border-color: #F4C542 !important;
+    color: #263238 !important;
+}
+
+/* Selector de plantas: Punta Teatinos verde */
+div[class*="planta_analisis_boton_2"] button,
+div[class*="planta_consumo_detalle_boton_2"] button {
+    background-color: #16A34A !important;
+    border-color: #16A34A !important;
+    color: white !important;
+}
+
+/* Panel diferenciado de consumo histórico */
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 12px;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,11 +119,14 @@ def normalizar(texto):
         c for c in texto
         if not unicodedata.combining(c)
     )
-    return texto.replace(" ", "").replace("_", "").replace(".", "")
+    return (
+        texto.replace(" ", "")
+        .replace("_", "")
+        .replace(".", "")
+    )
 
 
 def buscar_columna(df, alternativas):
-
     columnas = {
         normalizar(col): col
         for col in df.columns
@@ -101,14 +134,11 @@ def buscar_columna(df, alternativas):
 
     for alternativa in alternativas:
         clave = normalizar(alternativa)
-
         if clave in columnas:
             return columnas[clave]
 
     for clave, original in columnas.items():
-
         for alternativa in alternativas:
-
             if normalizar(alternativa) in clave:
                 return original
 
@@ -116,7 +146,6 @@ def buscar_columna(df, alternativas):
 
 
 def limpiar_codigo(valor):
-
     if pd.isna(valor):
         return ""
 
@@ -124,37 +153,13 @@ def limpiar_codigo(valor):
 
 
 def numero(valor):
-
     return pd.to_numeric(
         pd.Series([valor]),
         errors="coerce"
     ).iloc[0]
 
 
-def leer_excel(archivo):
-
-    if archivo is None:
-        return pd.DataFrame()
-
-    try:
-        archivo.seek(0)
-
-        return pd.read_excel(
-            archivo,
-            engine="openpyxl"
-        )
-
-    except Exception as e:
-
-        st.error(
-            f"Error leyendo {archivo.name}: {e}"
-        )
-
-        return pd.DataFrame()
-
-
 def fecha_excel(serie):
-
     return pd.to_datetime(
         serie,
         errors="coerce",
@@ -164,55 +169,123 @@ def fecha_excel(serie):
 
 def formato_numero(valor, decimales=0):
     valor = numero(valor)
+
     if pd.isna(valor):
         return "0"
-    return f"{valor:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+    return (
+        f"{valor:,.{decimales}f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
+
+
+# ==========================================================
+# 4. SELECTOR DE PLANTAS
+# ==========================================================
 
 def selector_planta(titulo, key, incluir_todas=False):
-    opciones = (["Todas"] if incluir_todas else []) + list(PLANTAS.keys())
-    if key not in st.session_state or st.session_state[key] not in opciones:
+
+    opciones = (
+        ["Todas"] if incluir_todas else []
+    ) + list(PLANTAS.keys())
+
+    if (
+        key not in st.session_state
+        or st.session_state[key] not in opciones
+    ):
         st.session_state[key] = opciones[0]
+
     st.markdown(f"**{titulo}**")
+
     columnas = st.columns(len(opciones))
+
     for i, opcion in enumerate(opciones):
+
         with columnas[i]:
-            elegido = st.session_state[key] == opcion
-            if st.button(("✓ " if elegido else "") + opcion, key=f"{key}_boton_{i}",
-                         use_container_width=True,
-                         type="primary" if elegido else "secondary"):
+
+            elegido = (
+                st.session_state[key] == opcion
+            )
+
+            if st.button(
+                ("✓ " if elegido else "") + opcion,
+                key=f"{key}_boton_{i}",
+                use_container_width=True,
+                type="primary" if elegido else "secondary"
+            ):
                 st.session_state[key] = opcion
                 st.rerun()
+
     return st.session_state[key]
 
 
+# ==========================================================
+# 5. BUSCADOR DE MATERIAS PRIMAS
+# ==========================================================
+
 def selector_material(df, texto_busqueda, key):
+
     if df.empty:
         return None
-    catalogo = df[["Material", "Descripción"]].fillna("").drop_duplicates().copy()
-    catalogo["Material"] = catalogo["Material"].astype(str)
-    catalogo["Descripción"] = catalogo["Descripción"].astype(str)
-    catalogo = catalogo[catalogo["Material"].str.strip() != ""]
-    busqueda = st.text_input(texto_busqueda,
+
+    catalogo = df[
+        ["Material", "Descripción"]
+    ].fillna("").drop_duplicates().copy()
+
+    catalogo["Material"] = (
+        catalogo["Material"].astype(str)
+    )
+
+    catalogo["Descripción"] = (
+        catalogo["Descripción"].astype(str)
+    )
+
+    catalogo = catalogo[
+        catalogo["Material"].str.strip() != ""
+    ]
+
+    busqueda = st.text_input(
+        texto_busqueda,
         placeholder="Escribe el código o nombre de la materia prima...",
-        key=f"{key}_busqueda").strip().lower()
+        key=f"{key}_busqueda"
+    ).strip().lower()
+
     if busqueda:
+
         catalogo = catalogo[
-            catalogo["Material"].str.lower().str.contains(busqueda, na=False)
-            | catalogo["Descripción"].str.lower().str.contains(busqueda, na=False)
+            catalogo["Material"].str.lower().str.contains(
+                busqueda, na=False
+            )
+            |
+            catalogo["Descripción"].str.lower().str.contains(
+                busqueda, na=False
+            )
         ]
+
     if catalogo.empty:
-        st.warning("No se encontraron materias primas con esa búsqueda.")
+        st.warning(
+            "No se encontraron materias primas con esa búsqueda."
+        )
         return None
-    opciones = {f"{r['Material']} — {r['Descripción']}".strip(" —"): r["Material"]
-                for _, r in catalogo.iterrows()}
-    etiqueta = st.selectbox("Seleccionar materia prima (código — nombre)",
-                            list(opciones.keys()), key=f"{key}_seleccion")
+
+    opciones = {
+        f"{r['Material']} — {r['Descripción']}".strip(" —"): r["Material"]
+        for _, r in catalogo.iterrows()
+    }
+
+    etiqueta = st.selectbox(
+        "Seleccionar materia prima (código — nombre)",
+        list(opciones.keys()),
+        key=f"{key}_seleccion"
+    )
+
     return opciones[etiqueta]
 
 
 # ==========================================================
-# 4. PROCESAMIENTO DE CONSUMOS SAP
+# 6. PROCESAMIENTO DE CONSUMOS SAP
 # ==========================================================
 
 def preparar_consumo(df, planta):
@@ -276,7 +349,9 @@ def preparar_consumo(df, planta):
         .str.strip()
     )
 
-    resultado["Fecha"] = fecha_excel(df[fecha])
+    resultado["Fecha"] = fecha_excel(
+        df[fecha]
+    )
 
     resultado["Unidad"] = (
         df[unidad].fillna("").astype(str)
@@ -289,25 +364,28 @@ def preparar_consumo(df, planta):
         subset=["Fecha"]
     )
 
-    # Movimientos de consumo y anulaciones.
     resultado = resultado[
         resultado["Movimiento"].isin(["261", "262"])
     ].copy()
 
-    # SAP: 261 normalmente negativo y 262 positivo.
-    # Se invierte el signo para presentar el consumo neto positivo.
+    # Consumo neto: 261 y 262 conservan su efecto mediante el signo SAP.
     resultado["Consumo"] = (
         -resultado["Cantidad original"]
     )
 
-    resultado["Año"] = resultado["Fecha"].dt.year
-    resultado["Mes"] = resultado["Fecha"].dt.month
+    resultado["Año"] = (
+        resultado["Fecha"].dt.year
+    )
+
+    resultado["Mes"] = (
+        resultado["Fecha"].dt.month
+    )
 
     return resultado
 
 
 # ==========================================================
-# 5. PROCESAMIENTO DE PRECIOS SAP
+# 7. PROCESAMIENTO DE PRECIOS SAP
 # ==========================================================
 
 def preparar_precios(df, planta):
@@ -352,18 +430,13 @@ def preparar_precios(df, planta):
     )
 
     unidad = buscar_columna(
-        df, [
-            "UNIDAD DE MEDIDA",
-            "Un.medida de entrada"
-        ]
+        df, ["UNIDAD DE MEDIDA", "Un.medida de entrada"]
     )
 
     if material is None or precio is None:
-
         st.error(
             f"Faltan columnas necesarias en precios {planta}."
         )
-
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
@@ -383,10 +456,7 @@ def preparar_precios(df, planta):
     )
 
     resultado["Cantidad precio"] = (
-        pd.to_numeric(
-            df[cantidad],
-            errors="coerce"
-        )
+        pd.to_numeric(df[cantidad], errors="coerce")
         if cantidad else np.nan
     )
 
@@ -420,7 +490,7 @@ def preparar_precios(df, planta):
         .str.strip()
         .replace("", "10")
         .replace("nan", "10")
-        .str.replace(r"\\.0$", "", regex=True)
+        .str.replace(r"\.0$", "", regex=True)
     )
 
     resultado["Unidad"] = (
@@ -430,15 +500,11 @@ def preparar_precios(df, planta):
 
     resultado["Planta"] = planta
 
-    # Precio unitario = PRECIO / CANTIDAD.
-    # Cuando no existe divisor válido, se conserva PRECIO.
     resultado["Precio unitario"] = np.where(
         resultado["Cantidad precio"].notna()
         & (resultado["Cantidad precio"] > 0),
-
         resultado["Precio original"]
         / resultado["Cantidad precio"],
-
         resultado["Precio original"]
     )
 
@@ -450,21 +516,19 @@ def preparar_precios(df, planta):
         resultado["Precio unitario"].notna()
     ]
 
-    resultado["Año"] = resultado["Fecha"].dt.year
+    resultado["Año"] = (
+        resultado["Fecha"].dt.year
+    )
 
     return resultado
 
 
 # ==========================================================
-# 6. PROCESAMIENTO DEL MRP
+# 8. LECTURA DEL REPORTE DE INVENTARIO
 # ==========================================================
 
 def leer_mrp(archivo):
-    """
-    Lee REPORTE TESIS.xlsx, que contiene una hoja por planta.
-    Devuelve la información de inventario y nivel de servicio en datos_ns.
-    datos_mrp se conserva vacío porque el reporte no incluye proyecciones futuras.
-    """
+
     if archivo is None:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -475,44 +539,95 @@ def leer_mrp(archivo):
     }
 
     lista = []
+
     try:
+
         for planta, hoja in nombres_hojas.items():
-            df = pd.read_excel(archivo, sheet_name=hoja, engine="openpyxl")
+
+            df = pd.read_excel(
+                archivo,
+                sheet_name=hoja,
+                engine="openpyxl"
+            )
+
             if df.empty:
                 continue
-            df.columns = [str(c).replace("\n", " ").strip() for c in df.columns]
+
+            df.columns = [
+                str(c).replace("\n", " ").strip()
+                for c in df.columns
+            ]
+
             df["Planta"] = planta
+
             if "Centro" not in df.columns:
                 df["Centro"] = PLANTAS[planta]
-            df["Centro"] = df["Centro"].astype(str).str.strip()
-            df["Material"] = df["Material"].apply(limpiar_codigo)
+
+            df["Centro"] = (
+                df["Centro"].astype(str).str.strip()
+            )
+
+            if "Material" not in df.columns:
+                continue
+
+            df["Material"] = (
+                df["Material"].apply(limpiar_codigo)
+            )
+
             lista.append(df)
 
         if not lista:
             return pd.DataFrame(), pd.DataFrame()
 
-        ns = pd.concat(lista, ignore_index=True)
-        ns = ns.dropna(subset=["Centro", "Material"])
-        ns = ns[ns["Material"].str.fullmatch(r"\d+", na=False)].copy()
-        ns = ns.drop_duplicates(subset=["Centro", "Material"], keep="first")
+        ns = pd.concat(
+            lista,
+            ignore_index=True
+        )
 
-        # Compatibilidad con las columnas que utiliza la sección de inventario.
-        if "NS Corregido" not in ns.columns and "NS" in ns.columns:
-            ns["NS Corregido"] = ns["NS"].astype(str).str.strip().str.upper()
-        if "Cob. [Meses]" not in ns.columns and "Cobertura [Meses]" in ns.columns:
-            ns["Cob. [Meses]"] = ns["Cobertura [Meses]"]
+        ns = ns.dropna(
+            subset=["Centro", "Material"]
+        )
 
-        # Este archivo no contiene detalle mensual proyectado.
-        mrp = pd.DataFrame()
-        return ns, mrp
+        ns = ns[
+            ns["Material"].str.fullmatch(
+                r"\d+", na=False
+            )
+        ].copy()
+
+        ns = ns.drop_duplicates(
+            subset=["Centro", "Material"],
+            keep="first"
+        )
+
+        if (
+            "NS Corregido" not in ns.columns
+            and "NS" in ns.columns
+        ):
+            ns["NS Corregido"] = (
+                ns["NS"].astype(str).str.strip().str.upper()
+            )
+
+        if (
+            "Cob. [Meses]" not in ns.columns
+            and "Cobertura [Meses]" in ns.columns
+        ):
+            ns["Cob. [Meses]"] = (
+                ns["Cobertura [Meses]"]
+            )
+
+        return ns, pd.DataFrame()
 
     except Exception as e:
-        st.error(f"Error procesando REPORTE TESIS.xlsx: {e}")
+
+        st.error(
+            f"Error procesando el reporte de inventario: {e}"
+        )
+
         return pd.DataFrame(), pd.DataFrame()
 
 
 # ==========================================================
-# 7. ENCABEZADO
+# 9. ENCABEZADO Y NAVEGACIÓN
 # ==========================================================
 
 st.markdown(
@@ -521,68 +636,127 @@ st.markdown(
 )
 
 st.markdown(
-    '<p class="subtitle">'
-    'ENAEX CHILE | Panel de control de abastecimiento'
-    '</p>',
+    '<p class="subtitle">ENAEX CHILE | Panel de control de abastecimiento</p>',
     unsafe_allow_html=True
 )
-
-
-# ==========================================================
-# 8. MENU LATERAL Y CARGA AUTOMATICA
-# ==========================================================
-
-from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
 ARCHIVOS_CONSUMO = {
-    "Río Loa": ["consumo_rio_loa.xlsx", "consumo rio loa.xlsx"],
-    "Prillex": ["consumo_prillex.xlsx", "consumo prillex(1).xlsx", "consumo prillex.xlsx"],
-    "Punta Teatinos": ["consumo_punta_teatinos.xlsx", "consumo teatitos(1).xlsx", "consumo teatitos.xlsx"]
+    "Río Loa": [
+        "consumo_rio_loa.xlsx",
+        "consumo rio loa.xlsx"
+    ],
+    "Prillex": [
+        "consumo_prillex.xlsx",
+        "consumo prillex(1).xlsx",
+        "consumo prillex.xlsx"
+    ],
+    "Punta Teatinos": [
+        "consumo_punta_teatinos.xlsx",
+        "consumo teatitos(1).xlsx",
+        "consumo teatitos.xlsx"
+    ]
 }
+
 ARCHIVOS_PRECIOS = {
-    "Río Loa": ["precios_rio_loa.xlsx", "precios rio loa.xlsx"],
-    "Prillex": ["precios_prillex.xlsx", "PRECIOS PRILLEX.xlsx"],
-    "Punta Teatinos": ["precios_punta_teatinos.xlsx", "PRECIOS TEATINOS.xlsx"]
+    "Río Loa": [
+        "precios_rio_loa.xlsx",
+        "precios rio loa.xlsx"
+    ],
+    "Prillex": [
+        "precios_prillex.xlsx",
+        "PRECIOS PRILLEX.xlsx"
+    ],
+    "Punta Teatinos": [
+        "precios_punta_teatinos.xlsx",
+        "PRECIOS TEATINOS.xlsx"
+    ]
 }
-ARCHIVO_REPORTE = ["REPORTE TESIS.xlsx", "reporte_tesis.xlsx"]
+
+ARCHIVO_REPORTE = [
+    "REPORTE TESIS.xlsx",
+    "reporte_tesis.xlsx"
+]
+
 
 def localizar_archivo(candidatos):
+
     for carpeta in (DATA_DIR, BASE_DIR):
+
         for nombre in candidatos:
+
             ruta = carpeta / nombre
+
             if ruta.exists():
                 return ruta
+
     return None
 
+
 def leer_excel_ruta(ruta):
+
     if ruta is None:
         return pd.DataFrame()
+
     try:
-        return pd.read_excel(ruta, engine="openpyxl")
+
+        return pd.read_excel(
+            ruta,
+            engine="openpyxl"
+        )
+
     except Exception as e:
-        st.error(f"No se pudo leer {ruta.name}: {e}")
+
+        st.error(
+            f"No se pudo leer {ruta.name}: {e}"
+        )
+
         return pd.DataFrame()
 
-with st.sidebar:
-    st.markdown("## 📊 ENAEX")
-    st.caption("GESTIÓN DE MATERIAS PRIMAS")
-    pagina = st.radio(
-        "NAVEGACIÓN",
-        ["Inventario y cobertura", "Resumen general",
-         "Análisis por planta", "Consumo mensual", "Evolución de precios"]
-    )
-    st.divider()
-    st.markdown("### 📁 INFORMACIÓN DEL DASHBOARD")
-    st.caption("Los Excel se leen automáticamente desde la carpeta data del repositorio.")
-    st.caption("Para actualizar la información, reemplaza los archivos en GitHub.")
-    st.divider()
-    st.caption("Prototipo académico | Enaex Chile")
 
 # ==========================================================
-# 9. CONSOLIDACION AUTOMATICA DE ARCHIVOS
+# 10. BARRA LATERAL
+# ==========================================================
+
+with st.sidebar:
+
+    st.markdown("## 📊 ENAEX")
+    st.caption("GESTIÓN DE MATERIAS PRIMAS")
+
+    pagina = st.radio(
+        "NAVEGACIÓN",
+        [
+            "Inventario y cobertura",
+            "Resumen general",
+            "Análisis por planta",
+            "Consumo mensual",
+            "Evolución de precios"
+        ]
+    )
+
+    st.divider()
+
+    st.markdown("### 📁 INFORMACIÓN DEL DASHBOARD")
+
+    st.caption(
+        "Los Excel se leen automáticamente desde la carpeta data del repositorio."
+    )
+
+    st.caption(
+        "Para actualizar la información, reemplaza los archivos en GitHub."
+    )
+
+    st.divider()
+
+    st.caption(
+        "Prototipo académico | Enaex Chile"
+    )
+
+
+# ==========================================================
+# 11. CONSOLIDACIÓN DE ARCHIVOS
 # ==========================================================
 
 lista_consumos = []
@@ -590,58 +764,103 @@ lista_precios = []
 archivos_faltantes = []
 
 for planta, candidatos in ARCHIVOS_CONSUMO.items():
+
     ruta = localizar_archivo(candidatos)
+
     if ruta is None:
-        archivos_faltantes.append(candidatos[0])
+
+        archivos_faltantes.append(
+            candidatos[0]
+        )
+
         continue
-    procesado = preparar_consumo(leer_excel_ruta(ruta), planta)
+
+    procesado = preparar_consumo(
+        leer_excel_ruta(ruta),
+        planta
+    )
+
     if not procesado.empty:
         lista_consumos.append(procesado)
 
+
 for planta, candidatos in ARCHIVOS_PRECIOS.items():
+
     ruta = localizar_archivo(candidatos)
+
     if ruta is None:
-        archivos_faltantes.append(candidatos[0])
+
+        archivos_faltantes.append(
+            candidatos[0]
+        )
+
         continue
-    procesado = preparar_precios(leer_excel_ruta(ruta), planta)
+
+    procesado = preparar_precios(
+        leer_excel_ruta(ruta),
+        planta
+    )
+
     if not procesado.empty:
         lista_precios.append(procesado)
 
-consumos = pd.concat(lista_consumos, ignore_index=True) if lista_consumos else pd.DataFrame()
-precios = pd.concat(lista_precios, ignore_index=True) if lista_precios else pd.DataFrame()
 
-ruta_reporte = localizar_archivo(ARCHIVO_REPORTE)
-datos_ns, datos_mrp = leer_mrp(ruta_reporte)
+consumos = (
+    pd.concat(
+        lista_consumos,
+        ignore_index=True
+    )
+    if lista_consumos
+    else pd.DataFrame()
+)
+
+precios = (
+    pd.concat(
+        lista_precios,
+        ignore_index=True
+    )
+    if lista_precios
+    else pd.DataFrame()
+)
+
+ruta_reporte = localizar_archivo(
+    ARCHIVO_REPORTE
+)
+
+datos_ns, datos_mrp = leer_mrp(
+    ruta_reporte
+)
 
 if archivos_faltantes:
+
     with st.sidebar:
-        with st.expander("Archivos pendientes", expanded=True):
+
+        with st.expander(
+            "Archivos pendientes",
+            expanded=True
+        ):
+
             for nombre in archivos_faltantes:
                 st.warning(f"Falta: {nombre}")
 
+
 # ==========================================================
-# 10. FILTROS GLOBALES
+# 12. FILTROS GLOBALES
 # ==========================================================
 
 años_disponibles = []
 
 if not consumos.empty:
-    años_disponibles += consumos["Año"].dropna().tolist()
+
+    años_disponibles += (
+        consumos["Año"].dropna().tolist()
+    )
 
 if not precios.empty:
-    años_disponibles += precios["Año"].dropna().tolist()
 
-if not datos_mrp.empty:
-
-    columnas_fecha = [
-        c for c in datos_mrp.columns
-        if isinstance(c, (datetime, pd.Timestamp))
-    ]
-
-    años_disponibles += [
-        pd.Timestamp(c).year
-        for c in columnas_fecha
-    ]
+    años_disponibles += (
+        precios["Año"].dropna().tolist()
+    )
 
 años_disponibles = sorted(
     set(años_disponibles)
@@ -650,8 +869,9 @@ años_disponibles = sorted(
 if not años_disponibles:
     años_disponibles = [datetime.now().year]
 
-
-plantas_disponibles = list(PLANTAS.keys())
+plantas_disponibles = list(
+    PLANTAS.keys()
+)
 
 with st.sidebar:
 
@@ -694,7 +914,7 @@ if planta_global != "Todas":
 
 
 # ==========================================================
-# 11. RESUMEN GENERAL
+# 13. RESUMEN GENERAL
 # ==========================================================
 
 if pagina == "Resumen general":
@@ -705,27 +925,35 @@ if pagina == "Resumen general":
 
     materiales = (
         consumo_filtrado["Material"].nunique()
-        if not consumo_filtrado.empty else 0
+        if not consumo_filtrado.empty
+        else 0
     )
 
-    registros = (
+    registros_consumo = (
+        len(consumo_filtrado)
+        if not consumo_filtrado.empty
+        else 0
+    )
+
+    registros_precios = (
         len(precio_filtrado)
-        if not precio_filtrado.empty else 0
+        if not precio_filtrado.empty
+        else 0
     )
 
     a.metric(
         "Materias primas",
-        f"{materiales:,}"
+        formato_numero(materiales)
     )
 
     b.metric(
         "Registros de consumo",
-        f"{len(consumo_filtrado):,}"
+        formato_numero(registros_consumo)
     )
 
     c.metric(
         "Registros de precios",
-        f"{registros:,}"
+        formato_numero(registros_precios)
     )
 
     d.metric(
@@ -733,124 +961,56 @@ if pagina == "Resumen general":
         str(len(plantas_disponibles))
     )
 
-    st.markdown("### Consumo mensual por planta")
-
-    if not consumo_filtrado.empty:
-
-        mensual = (
-            consumo_filtrado.groupby(
-                ["Planta", "Año", "Mes", "Unidad"],
-                as_index=False
-            )["Consumo"].sum()
-        )
-
-        mensual["Periodo"] = (
-            mensual["Año"].astype(str) + "-" +
-            mensual["Mes"].astype(str).str.zfill(2)
-        )
-
-        # No sumar unidades distintas en un solo gráfico.
-        unidad_grafico = st.selectbox(
-            "Unidad de medida",
-            sorted(mensual["Unidad"].dropna().unique()),
-            key="unidad_resumen"
-        )
-
-        mensual = mensual[
-            mensual["Unidad"] == unidad_grafico
-        ]
-
-        fig = px.line(
-            mensual,
-            x="Periodo",
-            y="Consumo",
-            color="Planta",
-            markers=True,
-            color_discrete_map=COLORES
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            xaxis_title="Período",
-            yaxis_title=f"Consumo ({unidad_grafico})"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    else:
-
-        st.info("Carga los archivos de consumo SAP.")
-
-    st.markdown("### Consumo por planta")
-
-    if not consumo_filtrado.empty:
-
-        unidad_comparacion = st.selectbox(
-            "Unidad para comparar plantas",
-            sorted(
-                consumo_filtrado["Unidad"].dropna().unique()
-            ),
-            key="unidad_planta"
-        )
-
-        por_planta = (
-            consumo_filtrado[
-                consumo_filtrado["Unidad"] == unidad_comparacion
-            ]
-            .groupby("Planta", as_index=False)["Consumo"]
-            .sum()
-        )
-
-        fig = px.bar(
-            por_planta,
-            x="Planta",
-            y="Consumo",
-            color="Planta",
-            color_discrete_map=COLORES
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            yaxis_title=f"Consumo ({unidad_comparacion})"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
+    # No se muestran gráficos en el resumen general.
 
 
 # ==========================================================
-# 12. ANALISIS POR PLANTA
+# 14. ANÁLISIS INDIVIDUAL POR PLANTA
 # ==========================================================
 
 elif pagina == "Análisis por planta":
 
-    st.markdown("## Análisis individual por planta")
+    st.markdown(
+        "## Análisis individual por planta"
+    )
 
-    planta = selector_planta("Seleccionar planta", "planta_analisis")
+    planta = selector_planta(
+        "Seleccionar planta",
+        "planta_analisis"
+    )
 
-    df_c = consumos[
-        (consumos["Planta"] == planta) &
-        (consumos["Año"] == año_seleccionado)
-    ].copy() if not consumos.empty else pd.DataFrame()
+    df_c = (
+        consumos[
+            (consumos["Planta"] == planta)
+            & (consumos["Año"] == año_seleccionado)
+        ].copy()
+        if not consumos.empty
+        else pd.DataFrame()
+    )
 
-    df_p = precios[
-        (precios["Planta"] == planta) &
-        (precios["Año"] == año_seleccionado)
-    ].copy() if not precios.empty else pd.DataFrame()
+    df_p = (
+        precios[
+            (precios["Planta"] == planta)
+            & (precios["Año"] == año_seleccionado)
+        ].copy()
+        if not precios.empty
+        else pd.DataFrame()
+    )
 
     cantidad_materiales = (
         df_c["Material"].nunique()
-        if not df_c.empty else 0
+        if not df_c.empty
+        else 0
     )
 
-    st.metric("Materias primas", formato_numero(cantidad_materiales))
+    st.metric(
+        "Materias primas",
+        formato_numero(cantidad_materiales)
+    )
 
-    st.markdown("### Consumo mensual por materia prima")
+    st.markdown(
+        "### Consumo mensual por materia prima"
+    )
 
     if not df_c.empty:
 
@@ -868,55 +1028,87 @@ elif pagina == "Análisis por planta":
 
             descripcion = (
                 detalle["Descripción"].iloc[0]
-                if not detalle.empty else ""
+                if not detalle.empty
+                else ""
             )
 
-            st.markdown(f"**{material} — {descripcion}**")
-
-            unidad = st.selectbox(
-                "Unidad de medida",
-                sorted(detalle["Unidad"].dropna().unique()),
-                key="unidad_planta_detalle"
+            st.markdown(
+                f"**{material} — {descripcion}**"
             )
 
-            grafico = (
-                detalle[detalle["Unidad"] == unidad]
-                .groupby(["Año", "Mes"], as_index=False)["Consumo"]
-                .sum()
+            unidades = sorted(
+                detalle["Unidad"].dropna().astype(str).unique()
             )
 
-            grafico["Periodo"] = (
-                grafico["Mes"].map(MESES)
-                + " "
-                + grafico["Año"].astype(str)
-            )
+            if unidades:
 
-            fig = px.bar(
-                grafico,
-                x="Periodo",
-                y="Consumo",
-                color_discrete_sequence=[COLORES[planta]]
-            )
+                unidad = st.selectbox(
+                    "Unidad de medida",
+                    unidades,
+                    key="unidad_planta_detalle"
+                )
 
-            fig.update_traces(
-                texttemplate="%{y:,.0f}",
-                textposition="outside"
-            )
+                grafico = (
+                    detalle[
+                        detalle["Unidad"] == unidad
+                    ]
+                    .groupby(
+                        ["Año", "Mes"],
+                        as_index=False
+                    )["Consumo"].sum()
+                )
 
-            fig.update_layout(
-                template="plotly_white",
-                yaxis_title=f"Consumo ({unidad})",
-                xaxis_title="Mes"
-            )
+                grafico["Fecha"] = pd.to_datetime(
+                    grafico["Año"].astype(str)
+                    + "-"
+                    + grafico["Mes"].astype(str).str.zfill(2)
+                    + "-01"
+                )
 
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
+                grafico = grafico.sort_values(
+                    "Fecha"
+                )
+
+                grafico["Periodo"] = (
+                    grafico["Mes"].map(MESES)
+                    + " "
+                    + grafico["Año"].astype(str)
+                )
+
+                fig = px.bar(
+                    grafico,
+                    x="Periodo",
+                    y="Consumo",
+                    color_discrete_sequence=[
+                        COLORES[planta]
+                    ]
+                )
+
+                fig.update_traces(
+                    texttemplate="%{y:,.0f}",
+                    textposition="outside"
+                )
+
+                fig.update_layout(
+                    template="plotly_white",
+                    yaxis_title=f"Consumo ({unidad})",
+                    xaxis_title="Mes"
+                )
+
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True
+                )
 
     else:
 
-        st.info("No hay información de consumo para esta planta y año.")
+        st.info(
+            "No hay información de consumo para esta planta y año."
+        )
+
+    # ------------------------------------------------------
+    # EVOLUCIÓN DE PRECIOS POR PLANTA
+    # ------------------------------------------------------
 
     st.markdown("### Evolución de precios")
 
@@ -955,8 +1147,13 @@ elif pagina == "Análisis por planta":
                     x="Fecha",
                     y="Precio unitario",
                     markers=True,
-                    hover_data=["Orden de compra", "Posición"],
-                    color_discrete_sequence=[COLORES[planta]]
+                    hover_data=[
+                        "Orden de compra",
+                        "Posición"
+                    ],
+                    color_discrete_sequence=[
+                        COLORES[planta]
+                    ]
                 )
 
                 fig.update_layout(
@@ -971,564 +1168,240 @@ elif pagina == "Análisis por planta":
 
     else:
 
-        st.info("No hay información de precios disponible.")
+        st.info(
+            "No hay información de precios disponible."
+        )
 
 
 # ==========================================================
-# 13. CONSUMO HISTORICO Y PLANIFICACION MRP
+# 15. CONSUMO HISTÓRICO DE MATERIAS PRIMAS
 # ==========================================================
 
 elif pagina == "Consumo mensual":
 
-    st.markdown("## Análisis de consumo histórico de materias primas")
+    st.markdown(
+        "## Consumo histórico de materias primas"
+    )
 
     st.caption(
-        "Consumo histórico registrado en SAP"
+        "Movimientos reales registrados en SAP"
     )
 
     if consumos.empty:
 
-        st.warning("No se encontraron archivos de consumo SAP.")
+        st.warning(
+            "No se encontraron archivos de consumo en la carpeta data."
+        )
+
         st.stop()
 
-    planta = selector_planta(
-        "Seleccionar planta",
-        "planta_consumo_detalle"
-    )
+    with st.container(border=True):
 
-    consumo_planta = consumos[
-        consumos["Planta"] == planta
-    ].copy()
+        planta = selector_planta(
+            "Seleccionar planta",
+            "planta_consumo_detalle"
+        )
 
-    consumo_planta = consumo_planta[
-        consumo_planta["Año"] == año_seleccionado
-    ].copy()
+        consumo_planta = consumos[
+            consumos["Planta"] == planta
+        ].copy()
 
-    if consumo_planta.empty:
+        catalogo = consumo_planta[
+            ["Material", "Descripción"]
+        ].drop_duplicates()
 
-        st.warning("No hay consumos registrados para esta planta y año.")
-        st.stop()
+        material = selector_material(
+            catalogo,
+            "Buscar por código o nombre de materia prima",
+            "material_consumo_detalle"
+        )
 
-    material = selector_material(
-        consumo_planta[["Material", "Descripción"]],
-        "Buscar por código o nombre de materia prima",
-        "material_consumo_detalle"
-    )
+        if material is None:
+            st.stop()
 
-    if material is None:
-        st.stop()
+        historial = consumo_planta[
+            consumo_planta["Material"] == material
+        ].copy()
 
-    historial = consumo_planta[
-        consumo_planta["Material"] == material
-    ].copy()
+        historial = historial.sort_values(
+            "Fecha"
+        )
 
-    descripcion = (
-        historial["Descripción"].iloc[0]
-        if not historial.empty else ""
-    )
+        descripcion = (
+            historial["Descripción"].dropna()
+        )
 
-    st.markdown(f"### {descripcion}")
-    st.caption(f"Código SAP: {material} | Planta: {planta}")
+        descripcion = (
+            descripcion.iloc[0]
+            if not descripcion.empty
+            else "Sin descripción"
+        )
 
-    unidad = st.selectbox(
-        "Unidad de medida",
-        sorted(historial["Unidad"].dropna().unique()),
-        key="unidad_consumo_historico"
-    )
+        st.markdown(
+            f"### {material} — {descripcion}"
+        )
 
-    historial = historial[
-        historial["Unidad"] == unidad
-    ].copy()
+        unidades = sorted(
+            historial["Unidad"].dropna().astype(str).unique()
+        )
 
-    # ------------------------------------------------------
-    # CONSUMO HISTORICO MENSUAL
-    # ------------------------------------------------------
+        if not unidades:
 
-    st.markdown("### Evolución mensual del consumo")
+            st.info(
+                "El material no tiene unidad de medida informada."
+            )
 
-    mensual = (
-        historial.groupby(
-            ["Año", "Mes"],
-            as_index=False
-        )["Consumo"].sum()
-    )
+            st.stop()
 
-    mensual["Fecha"] = pd.to_datetime(
-        mensual["Año"].astype(str)
-        + "-"
-        + mensual["Mes"].astype(str).str.zfill(2)
-        + "-01"
-    )
+        unidad = st.selectbox(
+            "Unidad de medida",
+            unidades,
+            key="unidad_consumo_historico"
+        )
 
-    mensual["Periodo"] = (
-        mensual["Mes"].map(MESES)
-        + " "
-        + mensual["Año"].astype(str)
-    )
+        historial = historial[
+            historial["Unidad"].astype(str) == unidad
+        ].copy()
 
-    fig = px.bar(
-        mensual.sort_values("Fecha"),
-        x="Periodo",
-        y="Consumo",
-        text_auto=".3s",
-        color_discrete_sequence=[COLORES[planta]]
-    )
+        # CONSUMO HISTÓRICO MENSUAL
 
-    fig.update_layout(
-        template="plotly_white",
-        xaxis_title="Mes",
-        yaxis_title=f"Consumo ({unidad})"
-    )
+        mensual = (
+            historial.groupby(
+                ["Año", "Mes"],
+                as_index=False
+            )["Consumo"].sum()
+        )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True
-    )
+        mensual["Fecha"] = pd.to_datetime(
+            mensual["Año"].astype(str)
+            + "-"
+            + mensual["Mes"].astype(str).str.zfill(2)
+            + "-01"
+        )
 
-    # ------------------------------------------------------
-    # INDICADORES HISTORICOS
-    # ------------------------------------------------------
+        mensual = mensual.sort_values(
+            "Fecha"
+        )
 
-    st.markdown("### Resumen del consumo")
+        mensual["Periodo"] = (
+            mensual["Mes"].map(MESES)
+            + " "
+            + mensual["Año"].astype(str)
+        )
 
-    consumo_total = historial["Consumo"].sum()
+        total_consumido = historial["Consumo"].sum()
 
-    promedio_mensual = mensual["Consumo"].mean()
+        meses_con_movimiento = mensual["Consumo"].count()
 
-    meses_con_consumo = len(mensual)
+        promedio_mensual = (
+            mensual["Consumo"].mean()
+            if not mensual.empty
+            else 0
+        )
 
-    a, b, c = st.columns(3)
+        # INDICADORES
 
-    a.metric(
-        "Consumo acumulado",
-        f"{formato_numero(consumo_total)} {unidad}"
-    )
+        a, b, c = st.columns(3)
 
-    b.metric(
-        "Promedio mensual",
-        f"{formato_numero(promedio_mensual)} {unidad}"
-    )
+        a.metric(
+            "Consumo acumulado",
+            f"{formato_numero(total_consumido)} {unidad}"
+        )
 
-    c.metric(
-        "Meses con registros",
-        str(meses_con_consumo)
-    )
+        b.metric(
+            "Promedio mensual",
+            f"{formato_numero(promedio_mensual)} {unidad}"
+        )
 
-    # ------------------------------------------------------
-    # DETALLE DE MOVIMIENTOS SAP
-    # ------------------------------------------------------
+        c.metric(
+            "Meses con registros",
+            formato_numero(meses_con_movimiento)
+        )
 
-    with st.expander("Detalle de movimientos SAP"):
+        # GRÁFICO HISTÓRICO
+
+        st.markdown(
+            "### Evolución mensual del consumo"
+        )
+
+        fig = px.bar(
+            mensual,
+            x="Periodo",
+            y="Consumo",
+            text="Consumo",
+            color_discrete_sequence=[
+                COLORES[planta]
+            ]
+        )
+
+        fig.update_traces(
+            texttemplate="%{y:,.0f}",
+            textposition="outside",
+            hovertemplate=(
+                "%{x}<br>Consumo: %{y:,.0f} "
+                + unidad
+                + "<extra></extra>"
+            )
+        )
+
+        fig.update_layout(
+            template="plotly_white",
+            xaxis_title="Mes",
+            yaxis_title=f"Consumo ({unidad})",
+            showlegend=False
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
+
+        # DETALLE SAP
+
+        st.markdown(
+            "### Detalle de movimientos SAP"
+        )
+
+        detalle = historial[[
+            "Fecha",
+            "Material",
+            "Descripción",
+            "Movimiento",
+            "Cantidad original",
+            "Consumo",
+            "Unidad"
+        ]].sort_values(
+            "Fecha",
+            ascending=False
+        ).copy()
 
         st.dataframe(
-            historial[[
-                "Fecha",
-                "Material",
-                "Descripción",
-                "Movimiento",
-                "Cantidad original",
-                "Consumo",
-                "Unidad"
-            ]].sort_values(
-                "Fecha",
-                ascending=False
-            ),
+            detalle.style.format({
+                "Cantidad original": lambda x: formato_numero(x),
+                "Consumo": lambda x: formato_numero(x)
+            }),
             use_container_width=True,
             hide_index=True
         )
 
 
 # ==========================================================
-# 11. RESUMEN GENERAL
+# 16. EVOLUCIÓN Y ANÁLISIS DE PRECIOS
 # ==========================================================
-
-if pagina == "Resumen general":
-
-    st.markdown("## Resumen general")
-
-    a, b, c, d = st.columns(4)
-
-    materiales = (
-        consumo_filtrado["Material"].nunique()
-        if not consumo_filtrado.empty else 0
-    )
-
-    registros = (
-        len(precio_filtrado)
-        if not precio_filtrado.empty else 0
-    )
-
-    a.metric(
-        "Materias primas",
-        f"{materiales:,}"
-    )
-
-    b.metric(
-        "Registros de consumo",
-        f"{len(consumo_filtrado):,}"
-    )
-
-    c.metric(
-        "Registros de precios",
-        f"{registros:,}"
-    )
-
-    d.metric(
-        "Plantas disponibles",
-        str(len(plantas_disponibles))
-    )
-
-    st.markdown("### Consumo mensual por planta")
-
-    if not consumo_filtrado.empty:
-
-        mensual = (
-            consumo_filtrado.groupby(
-                ["Planta", "Año", "Mes", "Unidad"],
-                as_index=False
-            )["Consumo"].sum()
-        )
-
-        mensual["Periodo"] = (
-            mensual["Año"].astype(str) + "-" +
-            mensual["Mes"].astype(str).str.zfill(2)
-        )
-
-        # No sumar unidades distintas en un solo gráfico.
-        unidad_grafico = st.selectbox(
-            "Unidad de medida",
-            sorted(mensual["Unidad"].dropna().unique()),
-            key="unidad_resumen"
-        )
-
-        mensual = mensual[
-            mensual["Unidad"] == unidad_grafico
-        ]
-
-        fig = px.line(
-            mensual,
-            x="Periodo",
-            y="Consumo",
-            color="Planta",
-            markers=True,
-            color_discrete_map=COLORES
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            xaxis_title="Período",
-            yaxis_title=f"Consumo ({unidad_grafico})"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-    else:
-
-        st.info("Carga los archivos de consumo SAP.")
-
-    st.markdown("### Consumo por planta")
-
-    if not consumo_filtrado.empty:
-
-        unidad_comparacion = st.selectbox(
-            "Unidad para comparar plantas",
-            sorted(
-                consumo_filtrado["Unidad"].dropna().unique()
-            ),
-            key="unidad_planta"
-        )
-
-        por_planta = (
-            consumo_filtrado[
-                consumo_filtrado["Unidad"] == unidad_comparacion
-            ]
-            .groupby("Planta", as_index=False)["Consumo"]
-            .sum()
-        )
-
-        fig = px.bar(
-            por_planta,
-            x="Planta",
-            y="Consumo",
-            color="Planta",
-            color_discrete_map=COLORES
-        )
-
-        fig.update_layout(
-            template="plotly_white",
-            yaxis_title=f"Consumo ({unidad_comparacion})"
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True
-        )
-
-
-# ==========================================================
-# 12. ANALISIS POR PLANTA
-# ==========================================================
-
-elif pagina == "Análisis por planta":
-
-    st.markdown("## Análisis individual por planta")
-
-    planta = selector_planta("Seleccionar planta", "planta_analisis")
-
-    df_c = consumos[
-        (consumos["Planta"] == planta) &
-        (consumos["Año"] == año_seleccionado)
-    ].copy() if not consumos.empty else pd.DataFrame()
-
-    df_p = precios[
-        (precios["Planta"] == planta) &
-        (precios["Año"] == año_seleccionado)
-    ].copy() if not precios.empty else pd.DataFrame()
-
-    cantidad_materiales = (
-        df_c["Material"].nunique()
-        if not df_c.empty else 0
-    )
-
-    st.metric("Materias primas", formato_numero(cantidad_materiales))
-
-    st.markdown("### Consumo mensual por materia prima")
-
-    if not df_c.empty:
-
-        material = selector_material(
-            df_c[["Material", "Descripción"]],
-            "Buscar por código o nombre de materia prima",
-            "material_consumo_planta"
-        )
-
-        if material is not None:
-
-            detalle = df_c[
-                df_c["Material"] == material
-            ].copy()
-
-            descripcion = (
-                detalle["Descripción"].iloc[0]
-                if not detalle.empty else ""
-            )
-
-            st.markdown(f"**{material} — {descripcion}**")
-
-            unidad = st.selectbox(
-                "Unidad de medida",
-                sorted(detalle["Unidad"].dropna().unique()),
-                key="unidad_planta_detalle"
-            )
-
-            grafico = (
-                detalle[detalle["Unidad"] == unidad]
-                .groupby(["Año", "Mes"], as_index=False)["Consumo"]
-                .sum()
-            )
-
-            grafico["Periodo"] = (
-                grafico["Mes"].map(MESES)
-                + " "
-                + grafico["Año"].astype(str)
-            )
-
-            fig = px.bar(
-                grafico,
-                x="Periodo",
-                y="Consumo",
-                color_discrete_sequence=[COLORES[planta]]
-            )
-
-            fig.update_traces(
-                texttemplate="%{y:,.0f}",
-                textposition="outside"
-            )
-
-            fig.update_layout(
-                template="plotly_white",
-                yaxis_title=f"Consumo ({unidad})",
-                xaxis_title="Mes"
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
-
-    else:
-
-        st.info("No hay información de consumo para esta planta y año.")
-
-    st.markdown("### Evolución de precios")
-
-    if not df_p.empty:
-
-        material_precio = selector_material(
-            df_p[["Material", "Descripción"]],
-            "Buscar materia prima para revisar sus precios",
-            "material_planta_precio"
-        )
-
-        if material_precio is not None:
-
-            seleccionado = df_p[
-                df_p["Material"] == material_precio
-            ].copy()
-
-            monedas = sorted(
-                seleccionado["Moneda"].dropna().unique()
-            )
-
-            if monedas:
-
-                moneda = st.selectbox(
-                    "Moneda",
-                    monedas,
-                    key="moneda_planta"
-                )
-
-                seleccionado = seleccionado[
-                    seleccionado["Moneda"] == moneda
-                ].sort_values("Fecha")
-
-                fig = px.line(
-                    seleccionado,
-                    x="Fecha",
-                    y="Precio unitario",
-                    markers=True,
-                    hover_data=["Orden de compra", "Posición"],
-                    color_discrete_sequence=[COLORES[planta]]
-                )
-
-                fig.update_layout(
-                    template="plotly_white",
-                    yaxis_title=f"Precio unitario ({moneda})"
-                )
-
-                st.plotly_chart(
-                    fig,
-                    use_container_width=True
-                )
-
-    else:
-
-        st.info("No hay información de precios disponible.")
-
-
-# ==========================================================
-# 13. CONSUMO HISTORICO Y PLANIFICACION MRP
-# ==========================================================
-
-elif pagina == "Consumo mensual":
-
-    st.markdown("## Consumo histórico de materias primas")
-    st.caption("Movimientos reales registrados en SAP")
-
-    if consumos.empty:
-        st.warning("No se encontraron archivos de consumo en la carpeta data.")
-        st.stop()
-
-    planta = selector_planta("Seleccionar planta", "planta_consumo_detalle")
-    consumo_planta = consumos[consumos["Planta"] == planta].copy()
-
-    catalogo = consumo_planta[["Material", "Descripción"]].drop_duplicates()
-    material = selector_material(
-        catalogo,
-        "Buscar materia prima por código o nombre",
-        "material_consumo_detalle"
-    )
-
-    if material is None:
-        st.stop()
-
-    historial = consumo_planta[consumo_planta["Material"] == material].copy()
-    historial = historial.sort_values("Fecha")
-
-    descripcion = historial["Descripción"].dropna()
-    descripcion = descripcion.iloc[0] if not descripcion.empty else "Sin descripción"
-
-    st.markdown(f"### {material} — {descripcion}")
-
-    unidades = sorted(historial["Unidad"].dropna().astype(str).unique())
-    if not unidades:
-        st.info("El material no tiene unidad de medida informada.")
-        st.stop()
-
-    unidad = st.selectbox("Unidad de medida", unidades, key="unidad_consumo_historico")
-    historial = historial[historial["Unidad"].astype(str) == unidad].copy()
-
-    mensual = (
-        historial.groupby(["Año", "Mes"], as_index=False)["Consumo"].sum()
-    )
-    mensual["Fecha"] = pd.to_datetime(
-        mensual["Año"].astype(str) + "-" +
-        mensual["Mes"].astype(str).str.zfill(2) + "-01"
-    )
-    mensual = mensual.sort_values("Fecha")
-    mensual["Periodo"] = mensual["Mes"].map(MESES) + " " + mensual["Año"].astype(str)
-
-    total_consumido = historial["Consumo"].sum()
-    meses_con_movimiento = mensual["Consumo"].count()
-    promedio_mensual = mensual["Consumo"].mean() if not mensual.empty else 0
-
-    a, b, c = st.columns(3)
-    a.metric("Consumo acumulado", f"{formato_numero(total_consumido)} {unidad}")
-    b.metric("Promedio mensual", f"{formato_numero(promedio_mensual)} {unidad}")
-    c.metric("Meses con registros", formato_numero(meses_con_movimiento))
-
-    st.markdown("### Evolución mensual del consumo")
-
-    fig = px.bar(
-        mensual,
-        x="Periodo",
-        y="Consumo",
-        text="Consumo",
-        color_discrete_sequence=[COLORES[planta]]
-    )
-    fig.update_traces(
-        texttemplate="%{y:,.0f}",
-        textposition="outside",
-        hovertemplate="%{x}<br>Consumo: %{y:,.0f} " + unidad + "<extra></extra>"
-    )
-    fig.update_layout(
-        template="plotly_white",
-        xaxis_title="Mes",
-        yaxis_title=f"Consumo ({unidad})",
-        showlegend=False
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("### Detalle de movimientos SAP")
-    detalle = historial[[
-        "Fecha", "Material", "Descripción", "Movimiento",
-        "Cantidad original", "Consumo", "Unidad"
-    ]].sort_values("Fecha", ascending=False).copy()
-
-    st.dataframe(
-        detalle.style.format({
-            "Cantidad original": lambda x: formato_numero(x),
-            "Consumo": lambda x: formato_numero(x)
-        }),
-        use_container_width=True,
-        hide_index=True
-    )
 
 elif pagina == "Evolución de precios":
 
-    st.markdown("## Evolución y análisis de precios")
+    st.markdown(
+        "## Evolución y análisis de precios"
+    )
 
     if precios.empty:
 
-        st.warning("Carga los archivos de precios SAP.")
-        st.stop()
+        st.warning(
+            "No se encontraron archivos de precios SAP."
+        )
 
-    # ------------------------------------------------------
-    # FILTRO DE PLANTA
-    # ------------------------------------------------------
+        st.stop()
 
     planta_precio = st.selectbox(
         "Seleccionar planta",
@@ -1545,14 +1418,20 @@ elif pagina == "Evolución de precios":
         ]
 
     datos = datos.dropna(
-        subset=["Fecha", "Precio unitario", "Moneda"]
+        subset=[
+            "Fecha",
+            "Precio unitario",
+            "Moneda"
+        ]
     )
 
     # ------------------------------------------------------
     # RANKING DE VARIACIONES
     # ------------------------------------------------------
 
-    st.markdown("### Ranking de variaciones de precios")
+    st.markdown(
+        "### Ranking de variaciones de precios"
+    )
 
     st.caption(
         f"Comparación entre el primer y último precio "
@@ -1571,9 +1450,15 @@ elif pagina == "Evolución de precios":
             ["Planta", "Material", "Moneda"]
         )
 
-        for (planta, material, moneda), grupo in grupos:
+        for (
+            planta_grupo,
+            material_grupo,
+            moneda_grupo
+        ), grupo in grupos:
 
-            grupo = grupo.sort_values("Fecha")
+            grupo = grupo.sort_values(
+                "Fecha"
+            )
 
             if len(grupo) < 2:
                 continue
@@ -1593,10 +1478,10 @@ elif pagina == "Evolución de precios":
 
             resultados.append({
 
-                "Planta": planta,
-                "Material": material,
+                "Planta": planta_grupo,
+                "Material": material_grupo,
                 "Descripción": ultimo["Descripción"],
-                "Moneda": moneda,
+                "Moneda": moneda_grupo,
                 "Precio inicial": inicial,
                 "Último precio": final,
                 "Variación (%)": variacion,
@@ -1606,7 +1491,9 @@ elif pagina == "Evolución de precios":
 
             })
 
-    ranking = pd.DataFrame(resultados)
+    ranking = pd.DataFrame(
+        resultados
+    )
 
     if not ranking.empty:
 
@@ -1628,7 +1515,9 @@ elif pagina == "Evolución de precios":
 
         with ca:
 
-            st.markdown("#### 🔴 Mayores aumentos")
+            st.markdown(
+                "#### Mayores aumentos"
+            )
 
             if not aumentos.empty:
 
@@ -1643,8 +1532,8 @@ elif pagina == "Evolución de precios":
                         "Variación (%)"
                     ]].style.format({
 
-                        "Precio inicial": "{:,.4f}",
-                        "Último precio": "{:,.4f}",
+                        "Precio inicial": lambda x: formato_numero(x, 2),
+                        "Último precio": lambda x: formato_numero(x, 2),
                         "Variación (%)": "{:+.2f}%"
 
                     }),
@@ -1654,11 +1543,15 @@ elif pagina == "Evolución de precios":
 
             else:
 
-                st.info("No hay aumentos registrados.")
+                st.info(
+                    "No hay aumentos registrados."
+                )
 
         with cb:
 
-            st.markdown("#### 🟢 Mayores disminuciones")
+            st.markdown(
+                "#### Mayores disminuciones"
+            )
 
             if not disminuciones.empty:
 
@@ -1673,8 +1566,8 @@ elif pagina == "Evolución de precios":
                         "Variación (%)"
                     ]].style.format({
 
-                        "Precio inicial": "{:,.4f}",
-                        "Último precio": "{:,.4f}",
+                        "Precio inicial": lambda x: formato_numero(x, 2),
+                        "Último precio": lambda x: formato_numero(x, 2),
                         "Variación (%)": "{:+.2f}%"
 
                     }),
@@ -1684,9 +1577,13 @@ elif pagina == "Evolución de precios":
 
             else:
 
-                st.info("No hay disminuciones registradas.")
+                st.info(
+                    "No hay disminuciones registradas."
+                )
 
-        st.markdown("### Comparación de variaciones")
+        st.markdown(
+            "### Comparación de variaciones"
+        )
 
         grafico_ranking = pd.concat(
             [aumentos, disminuciones],
@@ -1722,12 +1619,11 @@ elif pagina == "Evolución de precios":
                 use_container_width=True
             )
 
-        with st.expander("Consultar ranking completo"):
+        with st.expander(
+            "Consultar ranking completo"
+        ):
 
             st.dataframe(
-
-
-
                 ranking.sort_values(
                     "Variación (%)",
                     ascending=False
@@ -1745,18 +1641,28 @@ elif pagina == "Evolución de precios":
     st.divider()
 
     # ------------------------------------------------------
-    # ANALISIS INDIVIDUAL DE PRECIOS
+    # ANÁLISIS INDIVIDUAL DE PRECIOS
     # ------------------------------------------------------
 
-    st.markdown("### Análisis individual de precios")
+    st.markdown(
+        "### Análisis individual de precios"
+    )
 
-    materiales = sorted(
+    materiales_precio = sorted(
         datos["Material"].dropna().unique()
     )
 
+    if not materiales_precio:
+
+        st.warning(
+            "No hay materiales con precios disponibles."
+        )
+
+        st.stop()
+
     material = st.selectbox(
         "Seleccionar materia prima",
-        materiales,
+        materiales_precio,
         key="material_precio_individual"
     )
 
@@ -1764,10 +1670,19 @@ elif pagina == "Evolución de precios":
         datos["Material"] == material
     ].copy()
 
-    descripcion = df["Descripción"].iloc[0]
+    descripcion = (
+        df["Descripción"].iloc[0]
+        if not df.empty
+        else ""
+    )
 
-    st.markdown(f"#### {descripcion}")
-    st.caption(f"Código de material: {material}")
+    st.markdown(
+        f"#### {descripcion}"
+    )
+
+    st.caption(
+        f"Código de material: {material}"
+    )
 
     monedas = sorted(
         df["Moneda"].dropna().unique()
@@ -1781,37 +1696,38 @@ elif pagina == "Evolución de precios":
 
     df = df[
         df["Moneda"] == moneda
-    ].sort_values("Fecha")
+    ].sort_values(
+        "Fecha"
+    )
 
     if df.empty:
 
-        st.warning("No hay registros para esta moneda.")
-        st.stop()
+        st.warning(
+            "No hay registros para esta moneda."
+        )
 
-    # ------------------------------------------------------
-    # INDICADORES DE PRECIO
-    # ------------------------------------------------------
+        st.stop()
 
     inicial = df.iloc[0]["Precio unitario"]
     final = df.iloc[-1]["Precio unitario"]
-
     promedio = df["Precio unitario"].mean()
 
     variacion = (
         (final - inicial) / abs(inicial) * 100
-        if inicial != 0 else 0
+        if inicial != 0
+        else 0
     )
 
     a, b, c, d = st.columns(4)
 
     a.metric(
         "Precio inicial",
-        f"{inicial:,.4f} {moneda}"
+        f"{formato_numero(inicial, 2)} {moneda}"
     )
 
     b.metric(
         "Último precio",
-        f"{final:,.4f} {moneda}"
+        f"{formato_numero(final, 2)} {moneda}"
     )
 
     c.metric(
@@ -1821,7 +1737,7 @@ elif pagina == "Evolución de precios":
 
     d.metric(
         "Precio promedio",
-        f"{promedio:,.4f} {moneda}"
+        f"{formato_numero(promedio, 2)} {moneda}"
     )
 
     st.caption(
@@ -1831,10 +1747,12 @@ elif pagina == "Evolución de precios":
     )
 
     # ------------------------------------------------------
-    # GRAFICO DE PRECIOS
+    # GRÁFICO DE EVOLUCIÓN
     # ------------------------------------------------------
 
-    st.markdown("### 1. Evolución histórica del precio unitario")
+    st.markdown(
+        "### Evolución histórica del precio unitario"
+    )
 
     fig = px.line(
         df.sort_values("Fecha"),
@@ -1865,32 +1783,71 @@ elif pagina == "Evolución de precios":
     )
 
     # ------------------------------------------------------
-    # VARIACION ACUMULADA E HISTORIAL DE OC
+    # VARIACIÓN ACUMULADA DEBAJO DEL GRÁFICO
     # ------------------------------------------------------
 
     primer_precio = df.iloc[0]["Precio unitario"]
     ultimo_precio = df.iloc[-1]["Precio unitario"]
+
     variacion_acumulada = (
-        (ultimo_precio - primer_precio) / abs(primer_precio) * 100
-        if primer_precio != 0 else 0
+        (ultimo_precio - primer_precio)
+        / abs(primer_precio) * 100
+        if primer_precio != 0
+        else 0
     )
 
-    st.markdown("### Variación acumulada del precio")
+    st.markdown(
+        "### Variación acumulada del precio"
+    )
 
     k1, k2, k3 = st.columns(3)
-    k1.metric("Primer precio registrado", f"{formato_numero(primer_precio, 2)} {moneda}")
-    k2.metric("Último precio registrado", f"{formato_numero(ultimo_precio, 2)} {moneda}")
-    k3.metric("Variación acumulada", f"{variacion_acumulada:+.2f}%")
 
-    st.markdown("### Historial de órdenes de compra")
+    k1.metric(
+        "Primer precio registrado",
+        f"{formato_numero(primer_precio, 2)} {moneda}"
+    )
+
+    k2.metric(
+        "Último precio registrado",
+        f"{formato_numero(ultimo_precio, 2)} {moneda}"
+    )
+
+    k3.metric(
+        "Variación acumulada",
+        f"{variacion_acumulada:+.2f}%"
+    )
+
+    # ------------------------------------------------------
+    # HISTORIAL DE ÓRDENES DE COMPRA
+    # ------------------------------------------------------
+
+    st.markdown(
+        "### Historial de órdenes de compra"
+    )
 
     columnas_historial = [
-        "Fecha OC", "Orden de compra", "Posición", "Material",
-        "Descripción", "Cantidad precio", "Unidad",
-        "Precio original", "Precio unitario", "Moneda", "Fecha"
+        "Fecha OC",
+        "Orden de compra",
+        "Posición",
+        "Material",
+        "Descripción",
+        "Cantidad precio",
+        "Unidad",
+        "Precio original",
+        "Precio unitario",
+        "Moneda",
+        "Fecha"
     ]
-    historial = df.sort_values("Fecha", ascending=False).copy()
-    historial = historial[columnas_historial].rename(columns={
+
+    historial = df.sort_values(
+        "Fecha",
+        ascending=False
+    ).copy()
+
+    historial = historial[
+        columnas_historial
+    ].rename(columns={
+
         "Fecha OC": "FECHA OC",
         "Orden de compra": "Pedido",
         "Posición": "POSICIÓN",
@@ -1901,23 +1858,28 @@ elif pagina == "Evolución de precios":
         "Precio unitario": "PRECIO UNITARIO",
         "Moneda": "MONEDA",
         "Fecha": "FECHA CONTABILIZACIÓN"
+
     })
 
     st.dataframe(
         historial.style.format({
+
             "PRECIO": lambda x: formato_numero(x, 2),
             "PRECIO UNITARIO": lambda x: formato_numero(x, 2),
             "CANTIDAD": lambda x: formato_numero(x, 2)
+
         }),
         use_container_width=True,
         hide_index=True
     )
 
     # ------------------------------------------------------
-    # FECHA OC VS CONTABILIZACION
+    # FECHA OC VERSUS CONTABILIZACIÓN
     # ------------------------------------------------------
 
-    st.markdown("### 2. Fecha de OC versus contabilización")
+    st.markdown(
+        "### Fecha de OC versus contabilización"
+    )
 
     fechas = df.dropna(
         subset=["Fecha OC", "Fecha"]
@@ -1960,15 +1922,15 @@ elif pagina == "Evolución de precios":
 
     else:
 
-        st.info("No existen fechas suficientes para comparar.")
+        st.info(
+            "No existen fechas suficientes para comparar."
+        )
 
     # ------------------------------------------------------
-    # HISTORIAL DE OC
+    # DESCARGA DEL HISTORIAL
     # ------------------------------------------------------
 
-    st.markdown("### 3. Historial de órdenes de compra")
-
-    columnas = [
+    columnas_descarga = [
         "Fecha OC",
         "Fecha",
         "Orden de compra",
@@ -1980,13 +1942,17 @@ elif pagina == "Evolución de precios":
         "Unidad"
     ]
 
-    historial = df.sort_values(
+    historial_descarga = df.sort_values(
         "Fecha",
         ascending=False
     )
 
+    st.markdown(
+        "### Historial detallado de órdenes de compra"
+    )
+
     st.dataframe(
-        historial[columnas].rename(columns={
+        historial_descarga[columnas_descarga].rename(columns={
 
             "Fecha OC": "Fecha de OC",
             "Fecha": "Fecha contabilización",
@@ -2000,11 +1966,9 @@ elif pagina == "Evolución de precios":
         hide_index=True
     )
 
-    # ------------------------------------------------------
-    # DESCARGAR HISTORIAL
-    # ------------------------------------------------------
-
-    csv = historial[columnas].to_csv(
+    csv = historial_descarga[
+        columnas_descarga
+    ].to_csv(
         index=False,
         sep=";",
         decimal=",",
@@ -2019,20 +1983,22 @@ elif pagina == "Evolución de precios":
     )
 
 
-# ==========================================================#
-
-
 # ==========================================================
-# 15. INVENTARIO Y COBERTURA
+# 17. INVENTARIO Y COBERTURA
 # ==========================================================
 
 elif pagina == "Inventario y cobertura":
 
-    st.markdown("## Inventario y cobertura")
+    st.markdown(
+        "## Inventario y cobertura"
+    )
 
     if datos_ns.empty:
 
-        st.error("No fue posible procesar las hojas NS y MRP.")
+        st.error(
+            "No fue posible procesar las hojas del reporte de inventario."
+        )
+
         st.stop()
 
     planta = selector_planta(
@@ -2044,20 +2010,42 @@ elif pagina == "Inventario y cobertura":
     datos = datos_ns.copy()
 
     if planta != "Todas":
+
         datos = datos[
             datos["Centro"] == PLANTAS[planta]
         ]
 
-    datos["Material"] = datos["Material"].apply(limpiar_codigo)
+    datos["Material"] = (
+        datos["Material"].apply(limpiar_codigo)
+    )
 
     datos = datos[
-        datos["Material"].str.fullmatch(r"\d+", na=False)
+        datos["Material"].str.fullmatch(
+            r"\d+", na=False
+        )
     ].copy()
 
     datos = datos.drop_duplicates(
         subset=["Centro", "Material"],
         keep="first"
     )
+
+    columnas_necesarias = [
+        "Cob. [Meses]",
+        "Consumo X̅",
+        "NS Corregido",
+        "Descripción del material",
+        "UM",
+        "Stock Actual",
+        "Stock Seguridad",
+        "Stock Máximo",
+        "Comentario MMPP"
+    ]
+
+    for columna in columnas_necesarias:
+
+        if columna not in datos.columns:
+            datos[columna] = np.nan
 
     datos["Cob. [Meses]"] = pd.to_numeric(
         datos["Cob. [Meses]"],
@@ -2069,16 +2057,24 @@ elif pagina == "Inventario y cobertura":
         errors="coerce"
     )
 
+    datos["NS Corregido"] = (
+        datos["NS Corregido"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
     # ------------------------------------------------------
-    # INDICADORES
+    # INDICADORES DE INVENTARIO Y NIVEL DE SERVICIO
     # ------------------------------------------------------
 
     total = len(datos)
 
     baja = len(
         datos[
-            (datos["Cob. [Meses]"] >= 0) &
-            (datos["Cob. [Meses]"] < 1)
+            (datos["Cob. [Meses]"] >= 0)
+            & (datos["Cob. [Meses]"] < 1)
         ]
     )
 
@@ -2101,27 +2097,61 @@ elif pagina == "Inventario y cobertura":
     ).sum()
 
     total_clasificadas = eb + sb + bb
-    pct_eb = eb / total_clasificadas * 100 if total_clasificadas else 0
-    pct_sb = sb / total_clasificadas * 100 if total_clasificadas else 0
-    pct_bb = bb / total_clasificadas * 100 if total_clasificadas else 0
+
+    pct_eb = (
+        eb / total_clasificadas * 100
+        if total_clasificadas
+        else 0
+    )
+
+    pct_sb = (
+        sb / total_clasificadas * 100
+        if total_clasificadas
+        else 0
+    )
+
+    pct_bb = (
+        bb / total_clasificadas * 100
+        if total_clasificadas
+        else 0
+    )
 
     a, b, c, d = st.columns(4)
-    a.metric("Materias primas", formato_numero(total))
-    b.metric("Baja cobertura", formato_numero(baja))
-    c.metric("Sin consumo", formato_numero(sin_consumo))
-    d.metric("Nivel de servicio EB", f"{formato_numero(pct_eb, 1)}%")
+
+    a.metric(
+        "Materias primas",
+        formato_numero(total)
+    )
+
+    b.metric(
+        "Baja cobertura",
+        formato_numero(baja)
+    )
+
+    c.metric(
+        "Sin consumo",
+        formato_numero(sin_consumo)
+    )
+
+    d.metric(
+        "Nivel de servicio EB",
+        f"{formato_numero(pct_eb, 1)}%"
+    )
 
     st.caption(
         f"Distribución: EB {formato_numero(pct_eb, 1)}% · "
-        f"SB {formato_numero(pct_sb, 1)}% · BB {formato_numero(pct_bb, 1)}% "
+        f"SB {formato_numero(pct_sb, 1)}% · "
+        f"BB {formato_numero(pct_bb, 1)}% "
         f"(base: {total_clasificadas} materiales clasificados)."
     )
 
     # ------------------------------------------------------
-    # CLASIFICACION
+    # CLASIFICACIÓN DEL NIVEL DE SERVICIO
     # ------------------------------------------------------
 
-    st.markdown("### Clasificación del nivel de servicio")
+    st.markdown(
+        "### Clasificación del nivel de servicio"
+    )
 
     col1, col2 = st.columns(2)
 
@@ -2141,9 +2171,11 @@ elif pagina == "Inventario y cobertura":
             hole=0.60,
             color="Clasificación",
             color_discrete_map={
+
                 "EB": "#16A34A",
                 "SB": "#3B82F6",
                 "BB": "#DC4545"
+
             }
         )
 
@@ -2185,9 +2217,11 @@ elif pagina == "Inventario y cobertura":
             color="NS Corregido",
             barmode="group",
             color_discrete_map={
+
                 "EB": "#16A34A",
                 "SB": "#3B82F6",
                 "BB": "#DC4545"
+
             }
         )
 
@@ -2201,14 +2235,16 @@ elif pagina == "Inventario y cobertura":
         )
 
     # ------------------------------------------------------
-    # BAJA COBERTURA
+    # MATERIAS PRIMAS CON BAJA COBERTURA
     # ------------------------------------------------------
 
-    st.markdown("### Top 5 materias primas con baja cobertura")
+    st.markdown(
+        "### Top 5 materias primas con baja cobertura"
+    )
 
     baja_df = datos[
-        (datos["Cob. [Meses]"] >= 0) &
-        (datos["Cob. [Meses]"] < 1)
+        (datos["Cob. [Meses]"] >= 0)
+        & (datos["Cob. [Meses]"] < 1)
     ].nsmallest(
         5,
         "Cob. [Meses]"
@@ -2232,10 +2268,12 @@ elif pagina == "Inventario y cobertura":
     )
 
     # ------------------------------------------------------
-    # SIN CONSUMO
+    # MATERIAS PRIMAS SIN CONSUMO
     # ------------------------------------------------------
 
-    st.markdown("### Top 5 materias primas sin consumo")
+    st.markdown(
+        "### Top 5 materias primas sin consumo"
+    )
 
     sin = datos[
         datos["Consumo X̅"] == 0
@@ -2248,10 +2286,12 @@ elif pagina == "Inventario y cobertura":
     )
 
     # ------------------------------------------------------
-    # INVENTARIO
+    # TABLA GENERAL DE INVENTARIO
     # ------------------------------------------------------
 
-    st.markdown("### Inventario por materia prima")
+    st.markdown(
+        "### Inventario por materia prima"
+    )
 
     columnas_inventario = [
         "Centro",
@@ -2271,11 +2311,9 @@ elif pagina == "Inventario y cobertura":
         hide_index=True
     )
 
-    # ------------------------------------------------------
-
 
 # ==========================================================
-# 16. PIE DE PAGINA
+# 18. PIE DE PÁGINA
 # ==========================================================
 
 st.divider()

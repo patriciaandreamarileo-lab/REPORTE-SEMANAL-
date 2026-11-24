@@ -1553,60 +1553,39 @@ elif pagina == "Evolución de precios":
             else:
                 st.info("No hay disminuciones registradas.")
 
-        st.markdown("### Comparación de variaciones")
+   
+        st.markdown("### Ranking completo de variaciones")
 
-        grafico_ranking = pd.concat(
-            [aumentos, disminuciones],
-            ignore_index=True
+        st.caption(
+            "Se compara el primer precio registrado con el último "
+            "precio registrado de cada materia prima durante el año seleccionado. "
+            "Los precios se comparan por separado según su moneda."
         )
 
-        if not grafico_ranking.empty:
+        ranking_completo = ranking.sort_values(
+            "Variación (%)",
+            ascending=False
+        ).copy()
 
-            fig = px.bar(
-                grafico_ranking,
-                x="Variación (%)",
-                y="Material",
-                color="Variación (%)",
-                orientation="h",
-                hover_data=[
-                    "Planta",
-                    "Descripción",
-                    "Moneda",
-                    "Precio inicial",
-                    "Último precio"
-                ],
-                color_continuous_scale="RdYlGn_r"
-            )
-
-            fig.update_layout(
-                template="plotly_white",
-                yaxis_title="Material",
-                xaxis_title="Variación porcentual"
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
-
-        with st.expander("Consultar ranking completo"):
-
-            st.dataframe(
-                ranking.sort_values(
-                    "Variación (%)",
-                    ascending=False
-                ),
-                use_container_width=True,
-                hide_index=True
-            )
-
-    else:
-
-        st.info(
-            "No existen suficientes registros para calcular variaciones."
+        st.dataframe(
+            ranking_completo[[
+                "Planta",
+                "Material",
+                "Descripción",
+                "Moneda",
+                "Precio inicial",
+                "Último precio",
+                "Variación (%)",
+                "Registros"
+            ]].style.format({
+                "Precio inicial": lambda x: formato_numero(x, 2),
+                "Último precio": lambda x: formato_numero(x, 2),
+                "Variación (%)": "{:+.2f}%"
+            }),
+            use_container_width=True,
+            hide_index=True
         )
-
-    st.divider()
+   
 
     # ------------------------------------------------------
     # ANÁLISIS INDIVIDUAL DE PRECIOS

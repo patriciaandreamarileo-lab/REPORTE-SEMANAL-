@@ -1353,32 +1353,80 @@ elif pagina == "Análisis por planta":
 
             col1, col2 = st.columns(2)
 
-            with col1:
+                       with col1:
 
                 st.markdown(
-                    "### Distribución del nivel de servicio"
+                    "### Nivel de servicio por planta"
                 )
 
-                if total_ns:
+                columnas_plantas = st.columns(3)
 
-                    clasificacion = pd.DataFrame({
-                        "Clasificación": ["EB", "SB", "BB"],
-                        "Cantidad": [eb, sb, bb]
-                    })
+                for i, nombre_planta in enumerate(PLANTAS):
 
-                    fig = px.pie(
-                        clasificacion,
-                        names="Clasificación",
-                        values="Cantidad",
-                        hole=0.58,
-                        color="Clasificación",
-                        color_discrete_map={
-                            "EB": "#16A34A",
-                            "SB": "#3B82F6",
-                            "BB": "#DC4545"
-                        }
+                    datos_planta = datos_inventario[
+                        datos_inventario["Planta"] == nombre_planta
+                    ].copy()
+
+                    ns_planta = (
+                        datos_planta["NS"]
+                        .astype(str)
+                        .str.strip()
+                        .str.upper()
                     )
 
+                    eb_planta = int((ns_planta == "EB").sum())
+
+                    total_planta = int(
+                        ns_planta.isin(["EB", "SB", "BB"]).sum()
+                    )
+
+                    porcentaje = (
+                        eb_planta / total_planta * 100
+                        if total_planta > 0
+                        else 0
+                    )
+
+                    color = COLORES[nombre_planta]
+
+                    with columnas_plantas[i]:
+
+                        st.markdown(
+                            f"""
+                            <div style="
+                                background:white;
+                                border-top:5px solid {color};
+                                border-radius:10px;
+                                padding:14px;
+                                border-left:1px solid #E2E8F0;
+                                border-right:1px solid #E2E8F0;
+                                border-bottom:1px solid #E2E8F0;
+                                min-height:145px;
+                            ">
+                                <div style="
+                                    color:{color};
+                                    font-weight:bold;
+                                    font-size:15px;
+                                ">
+                                    {nombre_planta}
+                                </div>
+                                <div style="
+                                    font-size:30px;
+                                    font-weight:bold;
+                                    color:#263449;
+                                    margin-top:12px;
+                                ">
+                                    {porcentaje:.1f}%
+                                </div>
+                                <div style="
+                                    font-size:12px;
+                                    color:#64748B;
+                                ">
+                                    {eb_planta} de {total_planta} materiales EB
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
                     fig.update_layout(
                         template="plotly_white"
                     )

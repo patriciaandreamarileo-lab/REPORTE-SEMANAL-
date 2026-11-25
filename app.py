@@ -1346,13 +1346,65 @@ elif pagina == "Análisis por planta":
 
             st.divider()
 
-
             # ----------------------------------------------
-            # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
+            # DISTRIBUCIÓN DEL NIVEL DE SERVICIO
+            # Y PORCENTAJE POR PLANTA
             # ----------------------------------------------
 
             col1, col2 = st.columns(2)
+
             with col1:
+
+                st.markdown(
+                    "### Distribución del nivel de servicio"
+                )
+
+                if total_ns > 0:
+
+                    clasificacion = pd.DataFrame({
+                        "Clasificación": ["EB", "SB", "BB"],
+                        "Cantidad": [eb, sb, bb]
+                    })
+
+                    fig = px.pie(
+                        clasificacion,
+                        names="Clasificación",
+                        values="Cantidad",
+                        hole=0.58,
+                        color="Clasificación",
+                        color_discrete_map={
+                            "EB": "#16A34A",
+                            "SB": "#3B82F6",
+                            "BB": "#DC4545"
+                        }
+                    )
+
+                    fig.update_traces(
+                        textposition="inside",
+                        textinfo="percent+label"
+                    )
+
+                    fig.update_layout(
+                        template="plotly_white",
+                        showlegend=True,
+                        margin=dict(
+                            t=20,
+                            b=20,
+                            l=10,
+                            r=10
+                        )
+                    )
+
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True
+                    )
+
+                else:
+
+                    st.info(
+                        "No hay materiales clasificados EB, SB o BB."
+                    )
 
                 st.markdown(
                     "### Nivel de servicio por planta"
@@ -1391,47 +1443,15 @@ elif pagina == "Análisis por planta":
 
                     with columnas_plantas[i]:
 
-                        st.markdown(
-                            f"""
-                            <div style="
-                                background-color: white;
-                                border-top: 5px solid {color};
-                                border-radius: 10px;
-                                padding: 16px 12px;
-                                border-left: 1px solid #E2E8F0;
-                                border-right: 1px solid #E2E8F0;
-                                border-bottom: 1px solid #E2E8F0;
-                                min-height: 145px;
-                                text-align: center;
-                            ">
-                                <div style="
-                                    color: {color};
-                                    font-weight: bold;
-                                    font-size: 14px;
-                                ">
-                                    {nombre_planta}
-                                </div>
-
-                                <div style="
-                                    font-size: 28px;
-                                    font-weight: bold;
-                                    color: #263449;
-                                    margin-top: 12px;
-                                ">
-                                    {porcentaje:.1f}%
-                                </div>
-
-                                <div style="
-                                    font-size: 11px;
-                                    color: #64748B;
-                                    margin-top: 5px;
-                                ">
-                                    {eb_planta} de {total_planta} materiales EB
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
+                        st.metric(
+                            nombre_planta,
+                            f"{porcentaje:.1f}%"
                         )
+
+                        st.caption(
+                            f"{eb_planta} de {total_planta} materiales EB"
+                        )
+           
             with col2:
 
                 st.markdown(

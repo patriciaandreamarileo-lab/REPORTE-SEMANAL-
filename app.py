@@ -2037,4 +2037,3 @@ st.caption(
     "ENAEX CHILE | Prototipo académico de gestión de materias primas "
     "| Información sujeta a validación con SAP."
 )
-

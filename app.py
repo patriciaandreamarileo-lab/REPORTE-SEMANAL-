@@ -795,7 +795,6 @@ with st.sidebar:
     pagina = st.radio(
         "NAVEGACIÓN",
         [
-            "Resumen general",
             "Análisis por planta",
             "Consumo mensual",
             "Evolución de precios"
@@ -975,164 +974,10 @@ if planta_global != "Todas":
 
 
 # ==========================================================
-# 14. RESUMEN GENERAL
-# ==========================================================
-
-if pagina == "Resumen general":
-
-    st.markdown("## Resumen general")
-
-    materiales = (
-        consumo_filtrado["Material"].nunique()
-        if not consumo_filtrado.empty
-        else 0
-    )
-
-    a, b, c, d = st.columns(4)
-
-    a.metric(
-        "Materias primas con consumo",
-        formato_numero(materiales)
-    )
-
-    b.metric(
-        "Registros de consumo",
-        formato_numero(len(consumo_filtrado))
-    )
-
-    c.metric(
-        "Registros de precios",
-        formato_numero(len(precio_filtrado))
-    )
-
-    d.metric(
-        "Plantas disponibles",
-        str(len(PLANTAS))
-    )
-
-    st.markdown("### Consumo mensual por planta")
-
-    if not consumo_filtrado.empty:
-
-        mensual = (
-            consumo_filtrado
-            .groupby(
-                ["Planta", "Año", "Mes", "Unidad"],
-                as_index=False
-            )["Consumo"]
-            .sum()
-        )
-
-        mensual["Periodo"] = (
-            mensual["Mes"].map(MESES)
-            + " "
-            + mensual["Año"].astype(str)
-        )
-
-        unidades = sorted(
-            mensual["Unidad"].dropna().astype(str).unique()
-        )
-
-        if unidades:
-
-            unidad = st.selectbox(
-                "Unidad de medida",
-                unidades,
-                key="unidad_resumen"
-            )
-
-            graf = mensual[
-                mensual["Unidad"].astype(str) == unidad
-            ].copy()
-
-            graf["Orden"] = (
-                graf["Año"] * 100 + graf["Mes"]
-            )
-
-            graf = graf.sort_values("Orden")
-
-            fig = px.line(
-                graf,
-                x="Periodo",
-                y="Consumo",
-                color="Planta",
-                markers=True,
-                color_discrete_map=COLORES
-            )
-
-            fig.update_layout(
-                template="plotly_white",
-                xaxis_title="Mes",
-                yaxis_title=f"Consumo ({unidad})"
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
-
-        else:
-            st.info(
-                "Los registros de consumo no tienen unidad de medida."
-            )
-
-    else:
-        st.info(
-            "No hay datos de consumo para los filtros seleccionados."
-        )
-
-    st.markdown("### Consumo total por planta")
-
-    if not consumo_filtrado.empty:
-
-        unidades = sorted(
-            consumo_filtrado["Unidad"]
-            .dropna()
-            .astype(str)
-            .unique()
-        )
-
-        if unidades:
-
-            unidad_comp = st.selectbox(
-                "Unidad para comparar plantas",
-                unidades,
-                key="unidad_comparacion"
-            )
-
-            por_planta = (
-                consumo_filtrado[
-                    consumo_filtrado["Unidad"].astype(str)
-                    == unidad_comp
-                ]
-                .groupby("Planta", as_index=False)["Consumo"]
-                .sum()
-            )
-
-            fig = px.bar(
-                por_planta,
-                x="Planta",
-                y="Consumo",
-                color="Planta",
-                color_discrete_map=COLORES
-            )
-
-            fig.update_layout(
-                template="plotly_white",
-                yaxis_title=f"Consumo ({unidad_comp})"
-            )
-
-            st.plotly_chart(
-                fig,
-                use_container_width=True
-            )
-
-
-# ==========================================================
 # 15. ANÁLISIS POR PLANTA
 # ==========================================================
 
-elif pagina == "Análisis por planta":
+if pagina == "Análisis por planta":
 
     st.markdown("## Análisis individual por planta")
 

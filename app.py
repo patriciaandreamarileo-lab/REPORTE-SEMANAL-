@@ -1256,22 +1256,40 @@ elif pagina == "Análisis por planta":
 
                     
                     # TABLA DE ALERTAS: FONDO ROJO Y PRIMERA FILA EN NEGRITA
-                    estilo_alertas = (
+                                        estilo_alertas = (
                         tabla_alertas.style
                         .set_properties(
                             **{
                                 "background-color": "#FCE8E8",
-                                "color": "#873B3B"
+                                "color": "#873B3B",
+                                "border": "1px solid #E8B4B4"
                             }
                         )
                         .set_table_styles([
+                            {
+                                "selector": "th.col_heading",
+                                "props": [
+                                    ("background-color", "#F4CCCC"),
+                                    ("color", "#873B3B"),
+                                    ("font-weight", "bold"),
+                                    ("border", "1px solid #E8B4B4"),
+                                    ("text-align", "left")
+                                ]
+                            },
+                            {
+                                "selector": "thead th",
+                                "props": [
+                                    ("background-color", "#F4CCCC"),
+                                    ("color", "#873B3B"),
+                                    ("font-weight", "bold")
+                                ]
+                            },
                             {
                                 "selector": "th",
                                 "props": [
                                     ("background-color", "#F4CCCC"),
                                     ("color", "#873B3B"),
-                                    ("font-weight", "bold"),
-                                    ("border", "1px solid #E8B4B4")
+                                    ("font-weight", "bold")
                                 ]
                             }
                         ])
@@ -1287,10 +1305,32 @@ elif pagina == "Análisis por planta":
                         })
                     )
 
-                    st.dataframe(
-                        estilo_alertas,
-                        use_container_width=True,
-                        hide_index=True
+                    st.markdown(
+                        """
+                        <style>
+                        .tabla-alertas table {
+                            width: 100%;
+                            border-collapse: collapse;
+                        }
+                        .tabla-alertas th {
+                            background-color: #F4CCCC !important;
+                            color: #873B3B !important;
+                            font-weight: bold !important;
+                            border: 1px solid #E8B4B4 !important;
+                        }
+                        .tabla-alertas td {
+                            background-color: #FCE8E8 !important;
+                            color: #873B3B !important;
+                            border: 1px solid #E8B4B4 !important;
+                        }
+                        </style>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                    st.markdown(
+                        f'<div class="tabla-alertas">{estilo_alertas.to_html()}</div>',
+                        unsafe_allow_html=True
                     )
                 else:
 

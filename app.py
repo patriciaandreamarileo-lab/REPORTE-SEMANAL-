@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 # ==========================================================
-# 1. CONFIGURACION
+# 1. CONFIGURACIÓN
 # ==========================================================
 
 st.set_page_config(
@@ -31,10 +31,10 @@ COLORES = {
 }
 
 MESES = {
-    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
-    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
-    9: "Septiembre", 10: "Octubre", 11: "Noviembre",
-    12: "Diciembre"
+    1: "Enero", 2: "Febrero", 3: "Marzo",
+    4: "Abril", 5: "Mayo", 6: "Junio",
+    7: "Julio", 8: "Agosto", 9: "Septiembre",
+    10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
 st.markdown("""
@@ -156,7 +156,76 @@ def fecha_excel(serie):
 
 
 # ==========================================================
-# 3. SELECTOR DE PLANTAS CON COLORES
+# 3. CÁLCULO DEL NIVEL DE SERVICIO
+# ==========================================================
+
+def calcular_nivel_servicio(datos, centro):
+
+    columnas = [
+        "Centro",
+        "MMPP Activa",
+        "NS Corregido",
+        "Riesgo MMPP"
+    ]
+
+    if datos.empty or not all(
+        col in datos.columns for col in columnas
+    ):
+        return 0.0
+
+    df = datos.copy()
+
+    df = df[
+        (df["Centro"].astype(str).str.strip() == centro)
+        &
+        (
+            df["MMPP Activa"]
+            .astype(str)
+            .str.strip()
+            .str.upper() == "SI"
+        )
+    ].copy()
+
+    df["Riesgo MMPP"] = pd.to_numeric(
+        df["Riesgo MMPP"],
+        errors="coerce"
+    ).fillna(0)
+
+    df["NS Corregido"] = (
+        df["NS Corregido"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    riesgo_eb = df.loc[
+        df["NS Corregido"] == "EB",
+        "Riesgo MMPP"
+    ].sum()
+
+    riesgo_sb = df.loc[
+        df["NS Corregido"] == "SB",
+        "Riesgo MMPP"
+    ].sum()
+
+    riesgo_bb = df.loc[
+        df["NS Corregido"] == "BB",
+        "Riesgo MMPP"
+    ].sum()
+
+    denominador = riesgo_eb + riesgo_sb + riesgo_bb
+
+    if denominador == 0:
+        return 0.0
+
+    return (
+        (riesgo_eb + 0.5 * riesgo_sb)
+        / denominador
+    ) * 100
+
+
+# ==========================================================
+# 4. SELECTOR DE PLANTAS CON COLORES
 # ==========================================================
 
 def selector_planta(titulo, key, incluir_todas=False):
@@ -219,7 +288,7 @@ def selector_planta(titulo, key, incluir_todas=False):
 
 
 # ==========================================================
-# 4. SELECTOR DE MATERIAS PRIMAS
+# 5. SELECTOR DE MATERIAS PRIMAS
 # ==========================================================
 
 def selector_material(df, texto, key):
@@ -285,7 +354,7 @@ def selector_material(df, texto, key):
 
 
 # ==========================================================
-# 5. LECTURA DE EXCEL
+# 6. LECTURA DE EXCEL
 # ==========================================================
 
 def leer_excel_bytes(archivo, sheet_name=0, header=0):
@@ -311,7 +380,7 @@ def leer_excel_bytes(archivo, sheet_name=0, header=0):
 
 
 # ==========================================================
-# 6. PROCESAMIENTO DEL REPORTE DE INVENTARIO
+# 7. PROCESAMIENTO DEL REPORTE DE INVENTARIO
 # ==========================================================
 
 def preparar_reporte_inventario(archivo):
@@ -404,13 +473,31 @@ def preparar_reporte_inventario(archivo):
             "Stock Óptimo",
             "Stock Seguridad",
             "Stock Máximo",
-            "Cob. [Meses]"
+            "Cob. [Meses]",
+            "Riesgo MMPP"
         ]:
             if col in datos.columns:
                 datos[col] = pd.to_numeric(
                     datos[col],
                     errors="coerce"
                 )
+
+        # Normalización de las columnas usadas en el indicador.
+
+        if "MMPP Activa" in datos.columns:
+            datos["MMPP Activa"] = (
+                datos["MMPP Activa"]
+                .astype(str)
+                .str.strip()
+            )
+
+        if "NS Corregido" in datos.columns:
+            datos["NS Corregido"] = (
+                datos["NS Corregido"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
 
         if "NS" in datos.columns:
             datos["NS"] = (
@@ -419,8 +506,6 @@ def preparar_reporte_inventario(archivo):
                 .str.strip()
                 .str.upper()
             )
-        else:
-            datos["NS"] = ""
 
         if "Cob. [Meses]" in datos.columns:
             datos["Cobertura días"] = (
@@ -437,8 +522,9 @@ def preparar_reporte_inventario(archivo):
         )
         return pd.DataFrame()
 
+
 # ==========================================================
-# 7. PROCESAMIENTO DE CONSUMOS SAP
+# 8. PROCESAMIENTO DE CONSUMOS SAP
 # ==========================================================
 
 def preparar_consumo(df, planta):
@@ -512,10 +598,6 @@ def preparar_consumo(df, planta):
         resultado["Movimiento"].isin(["261", "262"])
     ].copy()
 
-    # 261: consumo.
-    # 262: reversa de consumo.
-    # Se invierte el signo para mostrar consumo neto positivo.
-
     resultado["Consumo"] = (
         -resultado["Cantidad original"]
     )
@@ -527,7 +609,7 @@ def preparar_consumo(df, planta):
 
 
 # ==========================================================
-# 8. PROCESAMIENTO DE PRECIOS SAP
+# 9. PROCESAMIENTO DE PRECIOS SAP
 # ==========================================================
 
 def preparar_precios(df, planta):
@@ -607,8 +689,6 @@ def preparar_precios(df, planta):
         if posicion else ""
     )
 
-    # Si la posición viene vacía, corresponde a la posición 10.
-
     resultado["Posición"] = (
         resultado["Posición"]
         .str.strip()
@@ -623,9 +703,6 @@ def preparar_precios(df, planta):
     )
 
     resultado["Planta"] = planta
-
-    # Precio unitario = PRECIO / CANTIDAD.
-    # No se aplican factores x100 o x1000 automáticamente.
 
     resultado["Precio unitario"] = np.where(
         resultado["Cantidad precio"].notna()
@@ -649,25 +726,22 @@ def preparar_precios(df, planta):
 
 
 # ==========================================================
-# 9. ARCHIVOS BASE
+# 10. ARCHIVOS BASE
 # ==========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
 ARCHIVOS_CONSUMO = {
-
     "Río Loa": [
         "consumo_rio_loa.xlsx",
         "consumo rio loa.xlsx"
     ],
-
     "Prillex": [
         "consumo_prillex.xlsx",
         "consumo prillex(1).xlsx",
         "consumo prillex.xlsx"
     ],
-
     "Punta Teatinos": [
         "consumo_punta_teatinos.xlsx",
         "consumo teatitos(1).xlsx",
@@ -675,19 +749,15 @@ ARCHIVOS_CONSUMO = {
     ]
 }
 
-
 ARCHIVOS_PRECIOS = {
-
     "Río Loa": [
         "precios_rio_loa.xlsx",
         "precios rio loa.xlsx"
     ],
-
     "Prillex": [
         "precios_prillex.xlsx",
         "PRECIOS PRILLEX.xlsx"
     ],
-
     "Punta Teatinos": [
         "precios_punta_teatinos.xlsx",
         "PRECIOS TEATINOS.xlsx"
@@ -728,7 +798,7 @@ def leer_excel_ruta(ruta):
 
 
 # ==========================================================
-# 10. ENCABEZADO Y BARRA LATERAL
+# 11. ENCABEZADO Y BARRA LATERAL
 # ==========================================================
 
 st.markdown(
@@ -798,21 +868,18 @@ with st.sidebar:
     )
 
 
-# Procesamiento del reporte cargado desde Streamlit.
-
 datos_inventario = preparar_reporte_inventario(
     archivo_reporte
 )
 
 
 # ==========================================================
-# 11. CONSOLIDACIÓN DE CONSUMOS Y PRECIOS
+# 12. CONSOLIDACIÓN DE CONSUMOS Y PRECIOS
 # ==========================================================
 
 lista_consumos = []
 lista_precios = []
 archivos_faltantes = []
-
 
 for planta, candidatos in ARCHIVOS_CONSUMO.items():
 
@@ -881,7 +948,7 @@ if archivos_faltantes:
 
 
 # ==========================================================
-# 12. FILTROS GLOBALES
+# 13. FILTROS GLOBALES
 # ==========================================================
 
 anios = []
@@ -925,20 +992,15 @@ with st.sidebar:
 consumo_filtrado = consumos.copy()
 precio_filtrado = precios.copy()
 
-
 if not consumo_filtrado.empty:
-
     consumo_filtrado = consumo_filtrado[
         consumo_filtrado["Año"] == anio_seleccionado
     ]
 
-
 if not precio_filtrado.empty:
-
     precio_filtrado = precio_filtrado[
         precio_filtrado["Año"] == anio_seleccionado
     ]
-
 
 if planta_global != "Todas":
 
@@ -949,11 +1011,12 @@ if planta_global != "Todas":
 
     if not precio_filtrado.empty:
         precio_filtrado = precio_filtrado[
+
             precio_filtrado["Planta"] == planta_global
         ]
 
 # ==========================================================
-# 13. RESUMEN GENERAL
+# 14. RESUMEN GENERAL
 # ==========================================================
 
 if pagina == "Resumen general":
@@ -1061,7 +1124,6 @@ if pagina == "Resumen general":
             "No hay datos de consumo para los filtros seleccionados."
         )
 
-
     st.markdown("### Consumo total por planta")
 
     if not consumo_filtrado.empty:
@@ -1113,7 +1175,7 @@ if pagina == "Resumen general":
 
 
 # ==========================================================
-# 14. ANÁLISIS POR PLANTA
+# 15. ANÁLISIS POR PLANTA
 # ==========================================================
 
 elif pagina == "Análisis por planta":
@@ -1147,32 +1209,41 @@ elif pagina == "Análisis por planta":
         else:
 
             # ----------------------------------------------
-            # NIVEL DE SERVICIO
+            # NIVEL DE SERVICIO DE LA PLANTA SELECCIONADA
             # ----------------------------------------------
 
-            ns = (
-                datos["NS"]
+            centro = PLANTAS[planta]
+
+            pct_eb = calcular_nivel_servicio(
+                datos_inventario,
+                centro
+            )
+
+            # Para el gráfico circular se consideran
+            # solamente los materiales MMPP activos.
+
+            datos_activos = datos[
+                datos["MMPP Activa"]
+                .astype(str)
+                .str.strip()
+                .str.upper() == "SI"
+            ].copy()
+
+            ns_activos = (
+                datos_activos["NS Corregido"]
                 .astype(str)
                 .str.strip()
                 .str.upper()
             )
 
-            eb = int((ns == "EB").sum())
-            sb = int((ns == "SB").sum())
-            bb = int((ns == "BB").sum())
-
-            total_ns = eb + sb + bb
-
-            pct_eb = (
-                eb / total_ns * 100
-                if total_ns
-                else 0
-            )
+            eb = int((ns_activos == "EB").sum())
+            sb = int((ns_activos == "SB").sum())
+            bb = int((ns_activos == "BB").sum())
 
             a, b, c, d = st.columns(4)
 
             a.metric(
-                "Nivel de servicio EB",
+                "Nivel de servicio",
                 f"{formato_numero(pct_eb, 1)}%"
             )
 
@@ -1192,8 +1263,8 @@ elif pagina == "Análisis por planta":
             )
 
             st.caption(
-                f"Cálculo: {eb} materiales EB / {total_ns} materiales "
-                "clasificados (EB + SB + BB)."
+                "Nivel de servicio ponderado según riesgo MMPP, "
+                "considerando únicamente materiales activos."
             )
 
 
@@ -1215,11 +1286,32 @@ elif pagina == "Análisis por planta":
 
                 if not alertas.empty:
 
-                    # Recuadro de alerta en rojo suave.
-                    html_alerta = f"""<div style="background-color:#FCE8E8;border-left:6px solid #D97777;border-radius:9px;padding:14px 18px;margin:8px 0 14px 0;">
-<div style="color:#963B3B;font-size:17px;font-weight:700;">⚠️ Atención: {len(alertas)} materias primas</div>
-<div style="color:#873B3B;font-size:14px;margin-top:4px;">Se identificaron materiales con menos de 10 días de cobertura. Se recomienda revisar su planificación y abastecimiento.</div>
-</div>"""
+                    html_alerta = f"""
+                    <div style="
+                        background-color:#FCE8E8;
+                        border-left:6px solid #D97777;
+                        border-radius:9px;
+                        padding:14px 18px;
+                        margin:8px 0 14px 0;
+                    ">
+                        <div style="
+                            color:#963B3B;
+                            font-size:17px;
+                            font-weight:700;
+                        ">
+                            ⚠️ Atención: {len(alertas)} materias primas
+                        </div>
+                        <div style="
+                            color:#873B3B;
+                            font-size:14px;
+                            margin-top:4px;
+                        ">
+                            Se identificaron materiales con menos de
+                            10 días de cobertura. Se recomienda revisar
+                            su planificación y abastecimiento.
+                        </div>
+                    </div>
+                    """
 
                     st.markdown(
                         html_alerta,
@@ -1232,7 +1324,7 @@ elif pagina == "Análisis por planta":
                         "UM",
                         "Stock Actual",
                         "Cobertura días",
-                        "NS",
+                        "NS Corregido",
                         "Comentario MMPP"
                     ]
 
@@ -1249,89 +1341,73 @@ elif pagina == "Análisis por planta":
                             "Descripción del material": "Descripción",
                             "UM": "Unidad",
                             "Cobertura días": "Cobertura (días)",
-                            "NS": "Nivel de servicio",
+                            "NS Corregido": "Nivel de servicio",
                             "Comentario MMPP": "Comentario"
                         }
                     )
 
-                    
-                    # TABLA DE ALERTAS: FONDO ROJO Y PRIMERA FILA EN NEGRITA
-                    estilo_alertas = (
-                        tabla_alertas.style
-                        .set_properties(
-                            **{
-                                "background-color": "#FCE8E8",
-                                "color": "#873B3B",
-                                "border": "1px solid #E8B4B4"
-                            }
-                        )
-                        .set_table_styles([
-                            {
-                                "selector": "th.col_heading",
-                                "props": [
-                                    ("background-color", "#F4CCCC"),
-                                    ("color", "#873B3B"),
-                                    ("font-weight", "bold"),
-                                    ("border", "1px solid #E8B4B4"),
-                                    ("text-align", "left")
-                                ]
-                            },
-                            {
-                                "selector": "thead th",
-                                "props": [
-                                    ("background-color", "#F4CCCC"),
-                                    ("color", "#873B3B"),
-                                    ("font-weight", "bold")
-                                ]
-                            },
-                            {
-                                "selector": "th",
-                                "props": [
-                                    ("background-color", "#F4CCCC"),
-                                    ("color", "#873B3B"),
-                                    ("font-weight", "bold")
-                                ]
-                            }
-                        ])
-                        .set_properties(
-                            subset=pd.IndexSlice[
-                                [tabla_alertas.index[0]], :
-                            ],
-                            **{"font-weight": "bold"}
-                        )
-                        .format({
-                            "Stock Actual": lambda x: formato_numero(x),
-                            "Cobertura (días)": lambda x: formato_numero(x, 1)
-                        })
-                    )
+                    if not tabla_alertas.empty:
 
-                    st.markdown(
-                        """
-                        <style>
-                        .tabla-alertas table {
-                            width: 100%;
-                            border-collapse: collapse;
-                        }
-                        .tabla-alertas th {
-                            background-color: #F4CCCC !important;
-                            color: #873B3B !important;
-                            font-weight: bold !important;
-                            border: 1px solid #E8B4B4 !important;
-                        }
-                        .tabla-alertas td {
-                            background-color: #FCE8E8 !important;
-                            color: #873B3B !important;
-                            border: 1px solid #E8B4B4 !important;
-                        }
-                        </style>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                        estilo_alertas = (
+                            tabla_alertas.style
+                            .set_properties(
+                                **{
+                                    "background-color": "#FCE8E8",
+                                    "color": "#873B3B",
+                                    "border": "1px solid #E8B4B4"
+                                }
+                            )
+                            .set_table_styles([
+                                {
+                                    "selector": "th",
+                                    "props": [
+                                        ("background-color", "#F4CCCC"),
+                                        ("color", "#873B3B"),
+                                        ("font-weight", "bold"),
+                                        ("border", "1px solid #E8B4B4")
+                                    ]
+                                }
+                            ])
+                            .set_properties(
+                                subset=pd.IndexSlice[
+                                    [tabla_alertas.index[0]], :
+                                ],
+                                **{"font-weight": "bold"}
+                            )
+                            .format({
+                                "Stock Actual": lambda x: formato_numero(x),
+                                "Cobertura (días)": lambda x: formato_numero(x, 1)
+                            })
+                        )
 
-                    st.markdown(
-                        f'<div class="tabla-alertas">{estilo_alertas.to_html()}</div>',
-                        unsafe_allow_html=True
-                    )
+                        st.markdown(
+                            """
+                            <style>
+                            .tabla-alertas table {
+                                width: 100%;
+                                border-collapse: collapse;
+                            }
+                            .tabla-alertas th {
+                                background-color: #F4CCCC !important;
+                                color: #873B3B !important;
+                                font-weight: bold !important;
+                                border: 1px solid #E8B4B4 !important;
+                            }
+                            .tabla-alertas td {
+                                background-color: #FCE8E8 !important;
+                                color: #873B3B !important;
+                                border: 1px solid #E8B4B4 !important;
+                            }
+                            </style>
+                            """,
+                            unsafe_allow_html=True
+                        )
+
+                        st.markdown(
+                            f'<div class="tabla-alertas">{estilo_alertas.to_html()}</div>',
+                            unsafe_allow_html=True
+                        )
+
                 else:
 
                     st.success(
@@ -1346,9 +1422,9 @@ elif pagina == "Análisis por planta":
 
             st.divider()
 
+
             # ----------------------------------------------
-            # DISTRIBUCIÓN DEL NIVEL DE SERVICIO
-            # Y PORCENTAJE POR PLANTA
+            # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
             # ----------------------------------------------
 
             col1, col2 = st.columns(2)
@@ -1359,7 +1435,7 @@ elif pagina == "Análisis por planta":
                     "### Distribución del nivel de servicio"
                 )
 
-                if total_ns > 0:
+                if eb + sb + bb > 0:
 
                     clasificacion = pd.DataFrame({
                         "Clasificación": ["EB", "SB", "BB"],
@@ -1385,14 +1461,7 @@ elif pagina == "Análisis por planta":
                     )
 
                     fig.update_layout(
-                        template="plotly_white",
-                        showlegend=True,
-                        margin=dict(
-                            t=20,
-                            b=20,
-                            l=10,
-                            r=10
-                        )
+                        template="plotly_white"
                     )
 
                     st.plotly_chart(
@@ -1403,7 +1472,7 @@ elif pagina == "Análisis por planta":
                 else:
 
                     st.info(
-                        "No hay materiales clasificados EB, SB o BB."
+                        "No hay materiales activos clasificados EB, SB o BB."
                     )
 
                 st.markdown(
@@ -1412,46 +1481,58 @@ elif pagina == "Análisis por planta":
 
                 columnas_plantas = st.columns(3)
 
-                for i, nombre_planta in enumerate(PLANTAS.keys()):
+                for i, (nombre_planta, centro_planta) in enumerate(
+                    PLANTAS.items()
+                ):
 
-                    datos_planta = datos_inventario[
-                        datos_inventario["Planta"] == nombre_planta
-                    ].copy()
-
-                    ns_planta = (
-                        datos_planta["NS"]
-                        .astype(str)
-                        .str.strip()
-                        .str.upper()
-                    )
-
-                    eb_planta = int(
-                        (ns_planta == "EB").sum()
-                    )
-
-                    total_planta = int(
-                        ns_planta.isin(["EB", "SB", "BB"]).sum()
-                    )
-
-                    porcentaje = (
-                        eb_planta / total_planta * 100
-                        if total_planta > 0
-                        else 0
+                    porcentaje = calcular_nivel_servicio(
+                        datos_inventario,
+                        centro_planta
                     )
 
                     color = COLORES[nombre_planta]
 
                     with columnas_plantas[i]:
 
-                        st.metric(
-                            nombre_planta,
-                            f"{porcentaje:.1f}%"
+                        st.markdown(
+                            f"""
+                            <div style="
+                                background:white;
+                                border-top:5px solid {color};
+                                border-radius:10px;
+                                padding:14px 8px;
+                                border-left:1px solid #E2E8F0;
+                                border-right:1px solid #E2E8F0;
+                                border-bottom:1px solid #E2E8F0;
+                                text-align:center;
+                                min-height:125px;
+                            ">
+                                <div style="
+                                    color:{color};
+                                    font-weight:bold;
+                                    font-size:13px;
+                                ">
+                                    {nombre_planta}
+                                </div>
+                                <div style="
+                                    color:#263449;
+                                    font-size:27px;
+                                    font-weight:bold;
+                                    margin-top:12px;
+                                ">
+                                    {porcentaje:.1f}%
+                                </div>
+                                <div style="
+                                    color:#64748B;
+                                    font-size:11px;
+                                ">
+                                    Nivel de servicio
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
                         )
 
-                        st.caption(
-                            f"{eb_planta} de {total_planta} materiales EB"
-                        )
-           
             with col2:
 
                 st.markdown(
@@ -1660,9 +1741,8 @@ elif pagina == "Análisis por planta":
                     hide_index=True
                 )
 
-
 # ==========================================================
-# 15. CONSUMO MENSUAL
+# 16. CONSUMO MENSUAL
 # ==========================================================
 
 elif pagina == "Consumo mensual":
@@ -1853,7 +1933,7 @@ elif pagina == "Consumo mensual":
 
 
 # ==========================================================
-# 16. EVOLUCIÓN DE PRECIOS
+# 17. EVOLUCIÓN DE PRECIOS
 # ==========================================================
 
 elif pagina == "Evolución de precios":
@@ -2320,7 +2400,7 @@ elif pagina == "Evolución de precios":
 
 
 # ==========================================================
-# 17. PIE DE PÁGINA
+# 18. PIE DE PÁGINA
 # ==========================================================
 
 st.divider()
@@ -2329,3 +2409,5 @@ st.caption(
     "ENAEX CHILE | Prototipo académico de gestión de materias primas "
     "| Información sujeta a validación con SAP."
 )
+
+

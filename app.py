@@ -10,6 +10,7 @@ from pathlib import Path
 # ==========================================================
 # 1. CONFIGURACION
 # ==========================================================
+
 st.set_page_config(
     page_title="Gestión de Materias Primas | Enaex",
     page_icon="📊",
@@ -38,14 +39,36 @@ MESES = {
 
 st.markdown("""
 <style>
-.stApp {background-color:#F5F7FA;}
-[data-testid="stSidebar"] {background-color:#10234D;}
-[data-testid="stSidebar"] * {color:white !important;}
-.main-title {font-size:30px;font-weight:750;color:#14264E;margin-bottom:0;}
-.subtitle {color:#64748B;font-size:14px;margin-bottom:25px;}
+.stApp {
+    background-color: #F5F7FA;
+}
+
+[data-testid="stSidebar"] {
+    background-color: #10234D;
+}
+
+[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
+.main-title {
+    font-size: 30px;
+    font-weight: 750;
+    color: #14264E;
+    margin-bottom: 0;
+}
+
+.subtitle {
+    color: #64748B;
+    font-size: 14px;
+    margin-bottom: 25px;
+}
+
 div[data-testid="stMetric"] {
-    background:white;padding:15px;border-radius:10px;
-    border:1px solid #E2E8F0;
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    border: 1px solid #E2E8F0;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -54,64 +77,114 @@ div[data-testid="stMetric"] {
 # ==========================================================
 # 2. FUNCIONES GENERALES
 # ==========================================================
+
 def normalizar(texto):
     texto = str(texto).strip().lower()
     texto = unicodedata.normalize("NFKD", texto)
-    texto = "".join(c for c in texto if not unicodedata.combining(c))
-    return (texto.replace(" ", "").replace("_", "")
-            .replace(".", "").replace("\n", ""))
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+    )
+
+    return (
+        texto.replace(" ", "")
+        .replace("_", "")
+        .replace(".", "")
+        .replace("\n", "")
+    )
 
 
 def buscar_columna(df, alternativas):
-    mapa = {normalizar(c): c for c in df.columns}
+    mapa = {
+        normalizar(c): c
+        for c in df.columns
+    }
+
     for alt in alternativas:
         clave = normalizar(alt)
+
         if clave in mapa:
             return mapa[clave]
+
     for clave, original in mapa.items():
         for alt in alternativas:
             if normalizar(alt) in clave:
                 return original
+
     return None
 
 
 def limpiar_codigo(valor):
     if pd.isna(valor):
         return ""
+
     texto = str(valor).strip()
+
     if texto.endswith(".0"):
         texto = texto[:-2]
+
     return texto
 
 
 def numero(valor):
-    return pd.to_numeric(pd.Series([valor]), errors="coerce").iloc[0]
+    return pd.to_numeric(
+        pd.Series([valor]),
+        errors="coerce"
+    ).iloc[0]
 
 
 def formato_numero(valor, decimales=0):
     valor = numero(valor)
+
     if pd.isna(valor):
         return "—"
-    return f"{valor:,.{decimales}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    return (
+        f"{valor:,.{decimales}f}"
+        .replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
+    )
 
 
 def fecha_excel(serie):
-    return pd.to_datetime(serie, errors="coerce", dayfirst=True)
+    return pd.to_datetime(
+        serie,
+        errors="coerce",
+        dayfirst=True
+    )
 
+
+# ==========================================================
+# 3. SELECTOR DE PLANTAS CON COLORES
+# ==========================================================
 
 def selector_planta(titulo, key, incluir_todas=False):
-    opciones = (['Todas'] if incluir_todas else []) + list(PLANTAS.keys())
-    colores = {**COLORES, 'Todas': '#64748B'}
 
-    if key not in st.session_state or st.session_state[key] not in opciones:
+    opciones = (
+        ["Todas"] if incluir_todas else []
+    ) + list(PLANTAS.keys())
+
+    colores = {
+        **COLORES,
+        "Todas": "#64748B"
+    }
+
+    if (
+        key not in st.session_state
+        or st.session_state[key] not in opciones
+    ):
         st.session_state[key] = opciones[0]
 
     st.markdown(f"**{titulo}**")
+
     columnas = st.columns(len(opciones))
 
     for i, opcion in enumerate(opciones):
+
         color = colores[opcion]
         boton_key = f"{key}_btn_{i}"
+
         st.markdown(
             f"""<style>
             .st-key-{boton_key} button {{
@@ -128,68 +201,121 @@ def selector_planta(titulo, key, incluir_todas=False):
             </style>""",
             unsafe_allow_html=True
         )
+
         with columnas[i]:
+
             activo = st.session_state[key] == opcion
             etiqueta = ("✓ " if activo else "") + opcion
-            if st.button(etiqueta, key=boton_key, use_container_width=True):
+
+            if st.button(
+                etiqueta,
+                key=boton_key,
+                use_container_width=True
+            ):
                 st.session_state[key] = opcion
                 st.rerun()
 
     return st.session_state[key]
 
 
+# ==========================================================
+# 4. SELECTOR DE MATERIAS PRIMAS
+# ==========================================================
+
 def selector_material(df, texto, key):
+
     if df.empty:
         return None
-    catalogo = df[["Material", "Descripción"]].fillna("").drop_duplicates().copy()
-    catalogo["Material"] = catalogo["Material"].astype(str)
-    catalogo["Descripción"] = catalogo["Descripción"].astype(str)
-    catalogo = catalogo[catalogo["Material"].str.strip() != ""]
+
+    catalogo = (
+        df[["Material", "Descripción"]]
+        .fillna("")
+        .drop_duplicates()
+        .copy()
+    )
+
+    catalogo["Material"] = (
+        catalogo["Material"].astype(str)
+    )
+
+    catalogo["Descripción"] = (
+        catalogo["Descripción"].astype(str)
+    )
+
+    catalogo = catalogo[
+        catalogo["Material"].str.strip() != ""
+    ]
+
     busqueda = st.text_input(
-        texto, placeholder="Escribe el código o nombre de la materia prima...",
+        texto,
+        placeholder="Escribe el código o nombre de la materia prima...",
         key=f"{key}_busqueda"
     ).strip().lower()
+
     if busqueda:
         catalogo = catalogo[
-            catalogo["Material"].str.lower().str.contains(busqueda, na=False)
-            | catalogo["Descripción"].str.lower().str.contains(busqueda, na=False)
+            catalogo["Material"].str.lower().str.contains(
+                busqueda, na=False
+            )
+            |
+            catalogo["Descripción"].str.lower().str.contains(
+                busqueda, na=False
+            )
         ]
+
     if catalogo.empty:
-        st.warning("No se encontraron materias primas con esa búsqueda.")
+        st.warning(
+            "No se encontraron materias primas con esa búsqueda."
+        )
         return None
+
     opciones = {
-        f"{r['Material']} — {r['Descripción']}".strip(" —"): r["Material"]
+        f"{r['Material']} — {r['Descripción']}".strip(" —"):
+        r["Material"]
         for _, r in catalogo.iterrows()
     }
+
     etiqueta = st.selectbox(
         "Seleccionar materia prima (código — nombre)",
-        list(opciones.keys()), key=f"{key}_seleccion"
+        list(opciones.keys()),
+        key=f"{key}_seleccion"
     )
+
     return opciones[etiqueta]
 
 
+# ==========================================================
+# 5. LECTURA DE EXCEL
+# ==========================================================
+
 def leer_excel_bytes(archivo, sheet_name=0, header=0):
+
     if archivo is None:
         return pd.DataFrame()
+
     try:
         archivo.seek(0)
+
         return pd.read_excel(
             BytesIO(archivo.getvalue()),
             sheet_name=sheet_name,
             header=header,
             engine="openpyxl"
         )
+
     except Exception as e:
-        st.error(f"No se pudo leer {archivo.name}: {e}")
+        st.error(
+            f"No se pudo leer {archivo.name}: {e}"
+        )
         return pd.DataFrame()
 
 
 # ==========================================================
-# 3. PROCESAMIENTO DEL REPORTE DE INVENTARIO / NS
-#    Estructura comprobada en REPORTE TESIS:
-#    hojas Prillex, Rio Loa y Pta. Teatinos; encabezado fila 1.
+# 6. PROCESAMIENTO DEL REPORTE DE INVENTARIO
 # ==========================================================
+
 def preparar_reporte_inventario(archivo):
+
     if archivo is None:
         return pd.DataFrame()
 
@@ -198,108 +324,202 @@ def preparar_reporte_inventario(archivo):
         "Rio Loa": "Río Loa",
         "Pta. Teatinos": "Punta Teatinos"
     }
+
     lista = []
+
     try:
-        excel = pd.ExcelFile(BytesIO(archivo.getvalue()), engine="openpyxl")
+
+        excel = pd.ExcelFile(
+            BytesIO(archivo.getvalue()),
+            engine="openpyxl"
+        )
+
         for hoja, planta in hojas.items():
+
             if hoja not in excel.sheet_names:
-                st.warning(f"No se encontró la hoja '{hoja}' en el reporte.")
+                st.warning(
+                    f"No se encontró la hoja '{hoja}' en el reporte."
+                )
                 continue
+
             df = pd.read_excel(
                 BytesIO(archivo.getvalue()),
                 sheet_name=hoja,
                 header=0,
                 engine="openpyxl"
             )
+
             if df.empty:
                 continue
-            df.columns = [str(c).replace("\n", " ").strip() for c in df.columns]
+
+            df.columns = [
+                str(c).replace("\n", " ").strip()
+                for c in df.columns
+            ]
+
             df["Planta"] = planta
+
             if "Centro" not in df.columns:
                 df["Centro"] = PLANTAS[planta]
-            df["Centro"] = df["Centro"].astype(str).str.strip()
+
+            df["Centro"] = (
+                df["Centro"].astype(str).str.strip()
+            )
+
             if "Material" not in df.columns:
-                st.error(f"La hoja {hoja} no contiene la columna Material.")
+                st.error(
+                    f"La hoja {hoja} no contiene la columna Material."
+                )
                 continue
-            df["Material"] = df["Material"].apply(limpiar_codigo)
-            df = df[df["Material"].str.fullmatch(r"\d+", na=False)].copy()
+
+            df["Material"] = (
+                df["Material"].apply(limpiar_codigo)
+            )
+
+            df = df[
+                df["Material"].str.fullmatch(
+                    r"\d+",
+                    na=False
+                )
+            ].copy()
+
             lista.append(df)
 
         if not lista:
             return pd.DataFrame()
 
-        datos = pd.concat(lista, ignore_index=True)
-        datos = datos.drop_duplicates(
-            subset=["Centro", "Material"], keep="first"
+        datos = pd.concat(
+            lista,
+            ignore_index=True
         )
 
-        # Convertir columnas numéricas sin alterar los datos de origen.
+        datos = datos.drop_duplicates(
+            subset=["Centro", "Material"],
+            keep="first"
+        )
+
         for col in [
-            "Consumo X̅", "Stock Actual", "Stock Óptimo",
-            "Stock Seguridad", "Stock Máximo", "Cob. [Meses]"
+            "Consumo X̅",
+            "Stock Actual",
+            "Stock Óptimo",
+            "Stock Seguridad",
+            "Stock Máximo",
+            "Cob. [Meses]"
         ]:
             if col in datos.columns:
-                datos[col] = pd.to_numeric(datos[col], errors="coerce")
+                datos[col] = pd.to_numeric(
+                    datos[col],
+                    errors="coerce"
+                )
 
         if "NS" in datos.columns:
-            datos["NS"] = datos["NS"].astype(str).str.strip().str.upper()
+            datos["NS"] = (
+                datos["NS"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
         else:
             datos["NS"] = ""
 
         if "Cob. [Meses]" in datos.columns:
-            datos["Cobertura días"] = datos["Cob. [Meses]"] * 30
+            datos["Cobertura días"] = (
+                datos["Cob. [Meses]"] * 30
+            )
         else:
             datos["Cobertura días"] = np.nan
 
         return datos
 
     except Exception as e:
-        st.error(f"Error procesando el reporte de inventario: {e}")
+        st.error(
+            f"Error procesando el reporte de inventario: {e}"
+        )
         return pd.DataFrame()
 
 # ==========================================================
-# 4. PROCESAMIENTO DE CONSUMOS SAP
+# 7. PROCESAMIENTO DE CONSUMOS SAP
 # ==========================================================
+
 def preparar_consumo(df, planta):
+
     if df.empty:
         return pd.DataFrame()
 
     material = buscar_columna(df, ["Material"])
     descripcion = buscar_columna(df, ["Descripción material"])
-    cantidad = buscar_columna(df, ["Ctd.en UM entrada", "Cantidad"])
-    fecha = buscar_columna(df, ["Fecha contabiliz.", "Fecha contabilizacion"])
-    movimiento = buscar_columna(df, ["Clase de movimiento"])
-    unidad = buscar_columna(df, ["Un.medida de entrada", "Unidad de medida"])
+    cantidad = buscar_columna(
+        df, ["Ctd.en UM entrada", "Cantidad"]
+    )
+    fecha = buscar_columna(
+        df, ["Fecha contabiliz.", "Fecha contabilizacion"]
+    )
+    movimiento = buscar_columna(
+        df, ["Clase de movimiento"]
+    )
+    unidad = buscar_columna(
+        df, ["Un.medida de entrada", "Unidad de medida"]
+    )
 
-    if any(c is None for c in [material, cantidad, fecha, movimiento]):
-        st.error(f"Faltan columnas necesarias en consumo {planta}.")
+    if any(
+        c is None
+        for c in [material, cantidad, fecha, movimiento]
+    ):
+        st.error(
+            f"Faltan columnas necesarias en consumo {planta}."
+        )
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
-    resultado["Material"] = df[material].apply(limpiar_codigo)
+
+    resultado["Material"] = (
+        df[material].apply(limpiar_codigo)
+    )
+
     resultado["Descripción"] = (
-        df[descripcion].fillna("").astype(str) if descripcion else ""
+        df[descripcion].fillna("").astype(str)
+        if descripcion else ""
     )
-    resultado["Cantidad original"] = pd.to_numeric(
-        df[cantidad], errors="coerce"
-    ).fillna(0)
+
+    resultado["Cantidad original"] = (
+        pd.to_numeric(
+            df[cantidad],
+            errors="coerce"
+        ).fillna(0)
+    )
+
     resultado["Movimiento"] = (
-        df[movimiento].astype(str).str.replace(".0", "", regex=False).str.strip()
+        df[movimiento]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
     )
+
     resultado["Fecha"] = fecha_excel(df[fecha])
+
     resultado["Unidad"] = (
-        df[unidad].fillna("").astype(str) if unidad else ""
+        df[unidad].fillna("").astype(str)
+        if unidad else ""
     )
+
     resultado["Planta"] = planta
 
-    resultado = resultado.dropna(subset=["Fecha"])
+    resultado = resultado.dropna(
+        subset=["Fecha"]
+    )
+
     resultado = resultado[
         resultado["Movimiento"].isin(["261", "262"])
     ].copy()
 
-    # 261 corresponde al consumo y 262 a su reversa.
-    # Se invierte el signo para mostrar el consumo neto positivo.
-    resultado["Consumo"] = -resultado["Cantidad original"]
+    # 261: consumo.
+    # 262: reversa de consumo.
+    # Se invierte el signo para mostrar consumo neto positivo.
+
+    resultado["Consumo"] = (
+        -resultado["Cantidad original"]
+    )
+
     resultado["Año"] = resultado["Fecha"].dt.year
     resultado["Mes"] = resultado["Fecha"].dt.month
 
@@ -307,9 +527,11 @@ def preparar_consumo(df, planta):
 
 
 # ==========================================================
-# 5. PROCESAMIENTO DE PRECIOS SAP
+# 8. PROCESAMIENTO DE PRECIOS SAP
 # ==========================================================
+
 def preparar_precios(df, planta):
+
     if df.empty:
         return pd.DataFrame()
 
@@ -318,45 +540,75 @@ def preparar_precios(df, planta):
     precio = buscar_columna(df, ["PRECIO"])
     cantidad = buscar_columna(df, ["CANTIDAD"])
     moneda = buscar_columna(df, ["MONEDA"])
-    fecha = buscar_columna(df, ["Fecha contabiliz.", "Fecha contabilizacion"])
+
+    fecha = buscar_columna(
+        df, ["Fecha contabiliz.", "Fecha contabilizacion"]
+    )
+
     fecha_oc = buscar_columna(df, ["FECHA OC"])
     oc = buscar_columna(df, ["Pedido", "OC"])
-    posicion = buscar_columna(df, ["POSICIÓN", "POSICION"])
-    unidad = buscar_columna(df, ["UNIDAD DE MEDIDA", "Un.medida de entrada"])
+
+    posicion = buscar_columna(
+        df, ["POSICIÓN", "POSICION"]
+    )
+
+    unidad = buscar_columna(
+        df, ["UNIDAD DE MEDIDA", "Un.medida de entrada"]
+    )
 
     if material is None or precio is None:
-        st.error(f"Faltan columnas necesarias en precios {planta}.")
+        st.error(
+            f"Faltan columnas necesarias en precios {planta}."
+        )
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
-    resultado["Material"] = df[material].apply(limpiar_codigo)
+
+    resultado["Material"] = (
+        df[material].apply(limpiar_codigo)
+    )
+
     resultado["Descripción"] = (
-        df[descripcion].fillna("").astype(str) if descripcion else ""
+        df[descripcion].fillna("").astype(str)
+        if descripcion else ""
     )
-    resultado["Precio original"] = pd.to_numeric(
-        df[precio], errors="coerce"
+
+    resultado["Precio original"] = (
+        pd.to_numeric(df[precio], errors="coerce")
     )
+
     resultado["Cantidad precio"] = (
         pd.to_numeric(df[cantidad], errors="coerce")
         if cantidad else np.nan
     )
+
     resultado["Moneda"] = (
-        df[moneda].fillna("").astype(str).str.upper() if moneda else ""
+        df[moneda].fillna("").astype(str).str.upper()
+        if moneda else ""
     )
+
     resultado["Fecha"] = (
-        fecha_excel(df[fecha]) if fecha else pd.NaT
+        fecha_excel(df[fecha])
+        if fecha else pd.NaT
     )
+
     resultado["Fecha OC"] = (
-        fecha_excel(df[fecha_oc]) if fecha_oc else pd.NaT
+        fecha_excel(df[fecha_oc])
+        if fecha_oc else pd.NaT
     )
+
     resultado["Orden de compra"] = (
-        df[oc].fillna("").astype(str) if oc else ""
+        df[oc].fillna("").astype(str)
+        if oc else ""
     )
+
     resultado["Posición"] = (
-        df[posicion].fillna("").astype(str) if posicion else ""
+        df[posicion].fillna("").astype(str)
+        if posicion else ""
     )
 
     # Si la posición viene vacía, corresponde a la posición 10.
+
     resultado["Posición"] = (
         resultado["Posición"]
         .str.strip()
@@ -366,43 +618,56 @@ def preparar_precios(df, planta):
     )
 
     resultado["Unidad"] = (
-        df[unidad].fillna("").astype(str) if unidad else ""
+        df[unidad].fillna("").astype(str)
+        if unidad else ""
     )
+
     resultado["Planta"] = planta
 
     # Precio unitario = PRECIO / CANTIDAD.
     # No se aplican factores x100 o x1000 automáticamente.
+
     resultado["Precio unitario"] = np.where(
         resultado["Cantidad precio"].notna()
         & (resultado["Cantidad precio"] > 0),
-        resultado["Precio original"] / resultado["Cantidad precio"],
+        resultado["Precio original"]
+        / resultado["Cantidad precio"],
         resultado["Precio original"]
     )
 
     resultado = resultado.dropna(
-        subset=["Fecha", "Precio original", "Precio unitario"]
+        subset=[
+            "Fecha",
+            "Precio original",
+            "Precio unitario"
+        ]
     )
+
     resultado["Año"] = resultado["Fecha"].dt.year
 
     return resultado
 
 
 # ==========================================================
-# 6. ARCHIVOS BASE
+# 9. ARCHIVOS BASE
 # ==========================================================
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
 ARCHIVOS_CONSUMO = {
+
     "Río Loa": [
         "consumo_rio_loa.xlsx",
         "consumo rio loa.xlsx"
     ],
+
     "Prillex": [
         "consumo_prillex.xlsx",
         "consumo prillex(1).xlsx",
         "consumo prillex.xlsx"
     ],
+
     "Punta Teatinos": [
         "consumo_punta_teatinos.xlsx",
         "consumo teatitos(1).xlsx",
@@ -410,15 +675,19 @@ ARCHIVOS_CONSUMO = {
     ]
 }
 
+
 ARCHIVOS_PRECIOS = {
+
     "Río Loa": [
         "precios_rio_loa.xlsx",
         "precios rio loa.xlsx"
     ],
+
     "Prillex": [
         "precios_prillex.xlsx",
         "PRECIOS PRILLEX.xlsx"
     ],
+
     "Punta Teatinos": [
         "precios_punta_teatinos.xlsx",
         "PRECIOS TEATINOS.xlsx"
@@ -427,27 +696,41 @@ ARCHIVOS_PRECIOS = {
 
 
 def localizar_archivo(candidatos):
+
     for carpeta in (DATA_DIR, BASE_DIR):
+
         for nombre in candidatos:
+
             ruta = carpeta / nombre
+
             if ruta.exists():
                 return ruta
+
     return None
 
 
 def leer_excel_ruta(ruta):
+
     if ruta is None:
         return pd.DataFrame()
+
     try:
-        return pd.read_excel(ruta, engine="openpyxl")
+        return pd.read_excel(
+            ruta,
+            engine="openpyxl"
+        )
+
     except Exception as e:
-        st.error(f"No se pudo leer {ruta.name}: {e}")
+        st.error(
+            f"No se pudo leer {ruta.name}: {e}"
+        )
         return pd.DataFrame()
 
 
 # ==========================================================
-# 7. ENCABEZADO Y BARRA LATERAL
+# 10. ENCABEZADO Y BARRA LATERAL
 # ==========================================================
+
 st.markdown(
     '<p class="main-title">GESTIÓN DE MATERIAS PRIMAS</p>',
     unsafe_allow_html=True
@@ -460,7 +743,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+
 with st.sidebar:
+
     st.markdown("## 📊 ENAEX")
     st.caption("GESTIÓN DE MATERIAS PRIMAS")
 
@@ -475,7 +760,9 @@ with st.sidebar:
     )
 
     st.divider()
+
     st.markdown("### 📤 ACTUALIZAR INVENTARIO")
+
     st.caption(
         "Carga aquí el reporte Excel para actualizar "
         "inventario y nivel de servicio."
@@ -488,50 +775,78 @@ with st.sidebar:
     )
 
     if archivo_reporte is not None:
-        st.success(f"Archivo recibido: {archivo_reporte.name}")
-        st.caption("El archivo se está utilizando en esta sesión.")
+
+        st.success(
+            f"Archivo recibido: {archivo_reporte.name}"
+        )
+
+        st.caption(
+            "El archivo se está utilizando en esta sesión."
+        )
+
     else:
+
         st.info(
             "Carga el reporte para visualizar "
             "el análisis de inventario."
         )
 
     st.divider()
-    st.caption("Prototipo académico | Enaex Chile")
+
+    st.caption(
+        "Prototipo académico | Enaex Chile"
+    )
 
 
 # Procesamiento del reporte cargado desde Streamlit.
-datos_inventario = preparar_reporte_inventario(archivo_reporte)
+
+datos_inventario = preparar_reporte_inventario(
+    archivo_reporte
+)
 
 
 # ==========================================================
-# 8. CONSOLIDACIÓN DE CONSUMOS Y PRECIOS
+# 11. CONSOLIDACIÓN DE CONSUMOS Y PRECIOS
 # ==========================================================
+
 lista_consumos = []
 lista_precios = []
 archivos_faltantes = []
 
+
 for planta, candidatos in ARCHIVOS_CONSUMO.items():
+
     ruta = localizar_archivo(candidatos)
+
     if ruta is None:
         archivos_faltantes.append(candidatos[0])
         continue
 
     df = leer_excel_ruta(ruta)
-    procesado = preparar_consumo(df, planta)
+
+    procesado = preparar_consumo(
+        df,
+        planta
+    )
 
     if not procesado.empty:
         lista_consumos.append(procesado)
 
 
 for planta, candidatos in ARCHIVOS_PRECIOS.items():
+
     ruta = localizar_archivo(candidatos)
+
     if ruta is None:
         archivos_faltantes.append(candidatos[0])
         continue
 
     df = leer_excel_ruta(ruta)
-    procesado = preparar_precios(df, planta)
+
+    procesado = preparar_precios(
+        df,
+        planta
+    )
 
     if not procesado.empty:
         lista_precios.append(procesado)
@@ -539,32 +854,53 @@ for planta, candidatos in ARCHIVOS_PRECIOS.items():
 
 consumos = (
     pd.concat(lista_consumos, ignore_index=True)
-    if lista_consumos else pd.DataFrame()
+    if lista_consumos
+    else pd.DataFrame()
 )
 
 precios = (
     pd.concat(lista_precios, ignore_index=True)
-    if lista_precios else pd.DataFrame()
+    if lista_precios
+    else pd.DataFrame()
 )
 
 
 if archivos_faltantes:
+
     with st.sidebar:
-        with st.expander("Archivos SAP pendientes", expanded=False):
+
+        with st.expander(
+            "Archivos SAP pendientes",
+            expanded=False
+        ):
+
             for nombre in archivos_faltantes:
-                st.warning(f"Falta en data/: {nombre}")
+                st.warning(
+                    f"Falta en data/: {nombre}"
+                )
 
 
 # ==========================================================
-# 9. FILTROS GLOBALES
+# 12. FILTROS GLOBALES
 # ==========================================================
+
 anios = []
 
 if not consumos.empty:
-    anios += consumos["Año"].dropna().astype(int).tolist()
+    anios += (
+        consumos["Año"]
+        .dropna()
+        .astype(int)
+        .tolist()
+    )
 
 if not precios.empty:
-    anios += precios["Año"].dropna().astype(int).tolist()
+    anios += (
+        precios["Año"]
+        .dropna()
+        .astype(int)
+        .tolist()
+    )
 
 anios = sorted(set(anios))
 
@@ -573,6 +909,7 @@ if not anios:
 
 
 with st.sidebar:
+
     anio_seleccionado = st.selectbox(
         "AÑO DE ANÁLISIS",
         anios,
@@ -588,17 +925,23 @@ with st.sidebar:
 consumo_filtrado = consumos.copy()
 precio_filtrado = precios.copy()
 
+
 if not consumo_filtrado.empty:
+
     consumo_filtrado = consumo_filtrado[
         consumo_filtrado["Año"] == anio_seleccionado
     ]
 
+
 if not precio_filtrado.empty:
+
     precio_filtrado = precio_filtrado[
         precio_filtrado["Año"] == anio_seleccionado
     ]
 
+
 if planta_global != "Todas":
+
     if not consumo_filtrado.empty:
         consumo_filtrado = consumo_filtrado[
             consumo_filtrado["Planta"] == planta_global
@@ -610,7 +953,7 @@ if planta_global != "Todas":
         ]
 
 # ==========================================================
-# 10. RESUMEN GENERAL
+# 13. RESUMEN GENERAL
 # ==========================================================
 
 if pagina == "Resumen general":
@@ -707,11 +1050,13 @@ if pagina == "Resumen general":
             )
 
         else:
+
             st.info(
                 "Los registros de consumo no tienen unidad de medida."
             )
 
     else:
+
         st.info(
             "No hay datos de consumo para los filtros seleccionados."
         )
@@ -738,9 +1083,13 @@ if pagina == "Resumen general":
 
             por_planta = (
                 consumo_filtrado[
-                    consumo_filtrado["Unidad"].astype(str) == unidad_comp
+                    consumo_filtrado["Unidad"].astype(str)
+                    == unidad_comp
                 ]
-                .groupby("Planta", as_index=False)["Consumo"]
+                .groupby(
+                    "Planta",
+                    as_index=False
+                )["Consumo"]
                 .sum()
             )
 
@@ -764,7 +1113,7 @@ if pagina == "Resumen general":
 
 
 # ==========================================================
-# 11. ANÁLISIS POR PLANTA
+# 14. ANÁLISIS POR PLANTA
 # ==========================================================
 
 elif pagina == "Análisis por planta":
@@ -866,6 +1215,7 @@ elif pagina == "Análisis por planta":
 
                 if not alertas.empty:
 
+                    # Recuadro de alerta en rojo suave.
                     html_alerta = f"""<div style="background-color:#FCE8E8;border-left:6px solid #D97777;border-radius:9px;padding:14px 18px;margin:8px 0 14px 0;">
 <div style="color:#963B3B;font-size:17px;font-weight:700;">⚠️ Atención: {len(alertas)} materias primas</div>
 <div style="color:#873B3B;font-size:14px;margin-top:4px;">Se identificaron materiales con menos de 10 días de cobertura. Se recomienda revisar su planificación y abastecimiento.</div>
@@ -904,8 +1254,24 @@ elif pagina == "Análisis por planta":
                         }
                     )
 
+                    # --------------------------------------
+                    # TABLA DE ALERTAS EN ROJO SUAVE
+                    # --------------------------------------
+
+                    def resaltar_alertas(fila):
+
+                        return [
+                            "background-color: #FCE8E8; color: #873B3B;"
+                            for _ in fila
+                        ]
+
                     st.dataframe(
-                        tabla_alertas.style.format({
+                        tabla_alertas.style
+                        .apply(
+                            resaltar_alertas,
+                            axis=1
+                        )
+                        .format({
                             "Stock Actual": lambda x: formato_numero(x),
                             "Cobertura (días)": lambda x: formato_numero(x, 1)
                         }),
@@ -1036,7 +1402,9 @@ elif pagina == "Análisis por planta":
 
                 if not menor_stock.empty:
 
-                    tabla = menor_stock[columnas].rename(
+                    tabla = menor_stock[
+                        columnas
+                    ].rename(
                         columns={
                             "Material": "Código",
                             "Descripción del material": "Descripción",
@@ -1104,7 +1472,9 @@ elif pagina == "Análisis por planta":
                     if col in menor_consumo_mayor_stock.columns
                 ]
 
-                tabla = menor_consumo_mayor_stock[columnas].rename(
+                tabla = menor_consumo_mayor_stock[
+                    columnas
+                ].rename(
                     columns={
                         "Material": "Código",
                         "Descripción del material": "Descripción",
@@ -1140,7 +1510,9 @@ elif pagina == "Análisis por planta":
             # INVENTARIO COMPLETO
             # ----------------------------------------------
 
-            with st.expander("Ver inventario completo de la planta"):
+            with st.expander(
+                "Ver inventario completo de la planta"
+            ):
 
                 columnas = [
                     "Centro",
@@ -1161,7 +1533,9 @@ elif pagina == "Análisis por planta":
                     if col in datos.columns
                 ]
 
-                tabla = datos[columnas].rename(
+                tabla = datos[
+                    columnas
+                ].rename(
                     columns={
                         "Material": "Código",
                         "Descripción del material": "Descripción",
@@ -1175,8 +1549,10 @@ elif pagina == "Análisis por planta":
                     use_container_width=True,
                     hide_index=True
                 )
+
+
 # ==========================================================
-# 12. CONSUMO MENSUAL
+# 15. CONSUMO MENSUAL
 # ==========================================================
 
 elif pagina == "Consumo mensual":
@@ -1270,9 +1646,7 @@ elif pagina == "Consumo mensual":
         + "-01"
     )
 
-    mensual = mensual.sort_values(
-        "Fecha mes"
-    )
+    mensual = mensual.sort_values("Fecha mes")
 
     mensual["Periodo"] = (
         mensual["Mes"].map(MESES)
@@ -1369,7 +1743,7 @@ elif pagina == "Consumo mensual":
 
 
 # ==========================================================
-# 13. EVOLUCIÓN DE PRECIOS
+# 16. EVOLUCIÓN DE PRECIOS
 # ==========================================================
 
 elif pagina == "Evolución de precios":
@@ -1386,7 +1760,6 @@ elif pagina == "Evolución de precios":
 
         st.stop()
 
-    # Selector de planta con cajitas de colores.
     planta_precio = selector_planta(
         "Seleccionar planta",
         "planta_precios",
@@ -1837,7 +2210,7 @@ elif pagina == "Evolución de precios":
 
 
 # ==========================================================
-# 14. PIE DE PÁGINA
+# 17. PIE DE PÁGINA
 # ==========================================================
 
 st.divider()
@@ -1846,4 +2219,3 @@ st.caption(
     "ENAEX CHILE | Prototipo académico de gestión de materias primas "
     "| Información sujeta a validación con SAP."
 )
-

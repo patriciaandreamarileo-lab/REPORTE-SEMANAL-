@@ -1253,9 +1253,11 @@ elif pagina == "Análisis por planta":
                             "Comentario MMPP": "Comentario"
                         }
                     )
+                    ==========================================================
                     # TABLA DE ALERTAS: FONDO ROJO Y PRIMERA FILA EN NEGRITA
-
-                    estilo_alertas = (
+                    ==========================================================
+                    
+                                        estilo_alertas = (
                         tabla_alertas.style
                         .set_properties(
                             **{
@@ -1263,13 +1265,22 @@ elif pagina == "Análisis por planta":
                                 "color": "#873B3B"
                             }
                         )
+                        .set_table_styles([
+                            {
+                                "selector": "th",
+                                "props": [
+                                    ("background-color", "#F4CCCC"),
+                                    ("color", "#873B3B"),
+                                    ("font-weight", "bold"),
+                                    ("border", "1px solid #E8B4B4")
+                                ]
+                            }
+                        ])
                         .set_properties(
                             subset=pd.IndexSlice[
                                 [tabla_alertas.index[0]], :
                             ],
-                            **{
-                                "font-weight": "bold"
-                            }
+                            **{"font-weight": "bold"}
                         )
                         .format({
                             "Stock Actual": lambda x: formato_numero(x),

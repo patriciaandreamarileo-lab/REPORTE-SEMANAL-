@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -1037,16 +1038,11 @@ if pagina == "Análisis por planta":
 
             total_ns = eb + sb + bb
 
-            a, b, c, d = st.columns(4)
+            a, b, c = st.columns(3)
 
-            a.metric(
-                "Nivel de servicio",
-                f"{formato_numero(pct_eb, 1)}%"
-            )
-
-            b.metric("Materiales EB", formato_numero(eb))
-            c.metric("Materiales SB", formato_numero(sb))
-            d.metric("Materiales BB", formato_numero(bb))
+            a.metric("Materiales EB", formato_numero(eb))
+            b.metric("Materiales SB", formato_numero(sb))
+            c.metric("Materiales BB", formato_numero(bb))
 
             st.caption(
                 "Indicador ponderado según riesgo MMPP. "
@@ -1197,64 +1193,6 @@ if pagina == "Análisis por planta":
                         "No hay materiales activos clasificados EB, SB o BB."
                     )
 
-                st.markdown(
-                    "### Nivel de servicio por planta"
-                )
-
-                columnas_plantas = st.columns(3)
-
-                for i, (nombre_planta, centro_planta) in enumerate(
-                    PLANTAS.items()
-                ):
-
-                    porcentaje = calcular_nivel_servicio(
-                        datos_inventario,
-                        centro_planta
-                    )
-
-                    color = COLORES[nombre_planta]
-
-                    with columnas_plantas[i]:
-
-                        st.markdown(
-                            f"""
-                            <div style="
-                                background:white;
-                                border-top:5px solid {color};
-                                border-radius:10px;
-                                padding:14px 8px;
-                                border-left:1px solid #E2E8F0;
-                                border-right:1px solid #E2E8F0;
-                                border-bottom:1px solid #E2E8F0;
-                                text-align:center;
-                                min-height:125px;
-                            ">
-                                <div style="
-                                    color:{color};
-                                    font-weight:bold;
-                                    font-size:13px;
-                                ">
-                                    {nombre_planta}
-                                </div>
-                                <div style="
-                                    color:#263449;
-                                    font-size:27px;
-                                    font-weight:bold;
-                                    margin-top:12px;
-                                ">
-                                    {porcentaje:.1f}%
-                                </div>
-                                <div style="
-                                    color:#64748B;
-                                    font-size:11px;
-                                ">
-                                    Nivel de servicio
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-
             with col2:
 
                 st.markdown("### Resumen de inventario")
@@ -1265,10 +1203,8 @@ if pagina == "Análisis por planta":
                 )
 
                 st.metric(
-                    "Stock total registrado",
-                    formato_numero(datos["Stock Actual"].sum())
-                    if "Stock Actual" in datos.columns
-                    else "—"
+                    "Nivel de servicio",
+                    f"{formato_numero(pct_eb, 1)}%"
                 )
 
                 st.metric(
@@ -1862,10 +1798,7 @@ elif pagina == "Evolución de precios":
         "### Análisis individual de precios"
     )
 
-    # CAMBIO 2:
-    # Se incorpora una búsqueda por código y descripción.
-    # La función selector_material realiza ambos filtros.
-
+    # Búsqueda por código y descripción.
     material = selector_material(
         datos[["Material", "Descripción"]],
         "Buscar materia prima por código o nombre",
@@ -2104,3 +2037,4 @@ st.caption(
     "ENAEX CHILE | Prototipo académico de gestión de materias primas "
     "| Información sujeta a validación con SAP."
 )
+

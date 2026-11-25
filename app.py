@@ -81,6 +81,7 @@ div[data-testid="stMetric"] {
 def normalizar(texto):
     texto = str(texto).strip().lower()
     texto = unicodedata.normalize("NFKD", texto)
+
     texto = "".join(
         c for c in texto
         if not unicodedata.combining(c)
@@ -95,19 +96,23 @@ def normalizar(texto):
 
 
 def buscar_columna(df, alternativas):
+
     mapa = {
         normalizar(c): c
         for c in df.columns
     }
 
     for alt in alternativas:
+
         clave = normalizar(alt)
 
         if clave in mapa:
             return mapa[clave]
 
     for clave, original in mapa.items():
+
         for alt in alternativas:
+
             if normalizar(alt) in clave:
                 return original
 
@@ -115,6 +120,7 @@ def buscar_columna(df, alternativas):
 
 
 def limpiar_codigo(valor):
+
     if pd.isna(valor):
         return ""
 
@@ -127,6 +133,7 @@ def limpiar_codigo(valor):
 
 
 def numero(valor):
+
     return pd.to_numeric(
         pd.Series([valor]),
         errors="coerce"
@@ -134,6 +141,7 @@ def numero(valor):
 
 
 def formato_numero(valor, decimales=0):
+
     valor = numero(valor)
 
     if pd.isna(valor):
@@ -148,6 +156,7 @@ def formato_numero(valor, decimales=0):
 
 
 def fecha_excel(serie):
+
     return pd.to_datetime(
         serie,
         errors="coerce",
@@ -164,25 +173,36 @@ def calcular_nivel_servicio(datos, centro):
     columnas = [
         "Centro",
         "MMPP Activa",
-        "NS Corregido",
+        "NS",
         "Riesgo MMPP"
     ]
 
-    if datos.empty or not all(
-        col in datos.columns for col in columnas
-    ):
+    if datos.empty:
+        return 0.0
+
+    faltantes = [
+        col for col in columnas
+        if col not in datos.columns
+    ]
+
+    if faltantes:
         return 0.0
 
     df = datos.copy()
 
+    df["Centro"] = (
+        df["Centro"].astype(str).str.strip()
+    )
+
     df = df[
-        (df["Centro"].astype(str).str.strip() == centro)
+        (df["Centro"] == centro)
         &
         (
             df["MMPP Activa"]
             .astype(str)
             .str.strip()
-            .str.upper() == "SI"
+            .str.upper()
+            .isin(["SI", "SÍ"])
         )
     ].copy()
 
@@ -191,37 +211,41 @@ def calcular_nivel_servicio(datos, centro):
         errors="coerce"
     ).fillna(0)
 
-    df["NS Corregido"] = (
-        df["NS Corregido"]
+    df["NS"] = (
+        df["NS"]
         .astype(str)
         .str.strip()
         .str.upper()
     )
 
     riesgo_eb = df.loc[
-        df["NS Corregido"] == "EB",
+        df["NS"] == "EB",
         "Riesgo MMPP"
     ].sum()
 
     riesgo_sb = df.loc[
-        df["NS Corregido"] == "SB",
+        df["NS"] == "SB",
         "Riesgo MMPP"
     ].sum()
 
     riesgo_bb = df.loc[
-        df["NS Corregido"] == "BB",
+        df["NS"] == "BB",
         "Riesgo MMPP"
     ].sum()
 
-    denominador = riesgo_eb + riesgo_sb + riesgo_bb
+    denominador = (
+        riesgo_eb + riesgo_sb + riesgo_bb
+    )
 
     if denominador == 0:
         return 0.0
 
-    return (
+    porcentaje = (
         (riesgo_eb + 0.5 * riesgo_sb)
         / denominador
     ) * 100
+
+    return porcentaje
 
 
 # ==========================================================
@@ -274,13 +298,18 @@ def selector_planta(titulo, key, incluir_todas=False):
         with columnas[i]:
 
             activo = st.session_state[key] == opcion
-            etiqueta = ("✓ " if activo else "") + opcion
+
+            etiqueta = (
+                ("✓ " if activo else "")
+                + opcion
+            )
 
             if st.button(
                 etiqueta,
                 key=boton_key,
                 use_container_width=True
             ):
+
                 st.session_state[key] = opcion
                 st.rerun()
 
@@ -322,6 +351,7 @@ def selector_material(df, texto, key):
     ).strip().lower()
 
     if busqueda:
+
         catalogo = catalogo[
             catalogo["Material"].str.lower().str.contains(
                 busqueda, na=False
@@ -333,9 +363,11 @@ def selector_material(df, texto, key):
         ]
 
     if catalogo.empty:
+
         st.warning(
             "No se encontraron materias primas con esa búsqueda."
         )
+
         return None
 
     opciones = {
@@ -363,6 +395,7 @@ def leer_excel_bytes(archivo, sheet_name=0, header=0):
         return pd.DataFrame()
 
     try:
+
         archivo.seek(0)
 
         return pd.read_excel(
@@ -373,9 +406,11 @@ def leer_excel_bytes(archivo, sheet_name=0, header=0):
         )
 
     except Exception as e:
+
         st.error(
             f"No se pudo leer {archivo.name}: {e}"
         )
+
         return pd.DataFrame()
 
 
@@ -406,9 +441,11 @@ def preparar_reporte_inventario(archivo):
         for hoja, planta in hojas.items():
 
             if hoja not in excel.sheet_names:
+
                 st.warning(
                     f"No se encontró la hoja '{hoja}' en el reporte."
                 )
+
                 continue
 
             df = pd.read_excel(
@@ -436,9 +473,11 @@ def preparar_reporte_inventario(archivo):
             )
 
             if "Material" not in df.columns:
+
                 st.error(
                     f"La hoja {hoja} no contiene la columna Material."
                 )
+
                 continue
 
             df["Material"] = (
@@ -476,30 +515,18 @@ def preparar_reporte_inventario(archivo):
             "Cob. [Meses]",
             "Riesgo MMPP"
         ]:
+
             if col in datos.columns:
+
                 datos[col] = pd.to_numeric(
                     datos[col],
                     errors="coerce"
                 )
 
-        # Normalización de las columnas usadas en el indicador.
-
-        if "MMPP Activa" in datos.columns:
-            datos["MMPP Activa"] = (
-                datos["MMPP Activa"]
-                .astype(str)
-                .str.strip()
-            )
-
-        if "NS Corregido" in datos.columns:
-            datos["NS Corregido"] = (
-                datos["NS Corregido"]
-                .astype(str)
-                .str.strip()
-                .str.upper()
-            )
+        # La columna de clasificación se llama NS.
 
         if "NS" in datos.columns:
+
             datos["NS"] = (
                 datos["NS"]
                 .astype(str)
@@ -507,19 +534,36 @@ def preparar_reporte_inventario(archivo):
                 .str.upper()
             )
 
+        else:
+
+            datos["NS"] = ""
+
+        if "MMPP Activa" in datos.columns:
+
+            datos["MMPP Activa"] = (
+                datos["MMPP Activa"]
+                .astype(str)
+                .str.strip()
+            )
+
         if "Cob. [Meses]" in datos.columns:
+
             datos["Cobertura días"] = (
                 datos["Cob. [Meses]"] * 30
             )
+
         else:
+
             datos["Cobertura días"] = np.nan
 
         return datos
 
     except Exception as e:
+
         st.error(
             f"Error procesando el reporte de inventario: {e}"
         )
+
         return pd.DataFrame()
 
 
@@ -533,16 +577,23 @@ def preparar_consumo(df, planta):
         return pd.DataFrame()
 
     material = buscar_columna(df, ["Material"])
-    descripcion = buscar_columna(df, ["Descripción material"])
+
+    descripcion = buscar_columna(
+        df, ["Descripción material"]
+    )
+
     cantidad = buscar_columna(
         df, ["Ctd.en UM entrada", "Cantidad"]
     )
+
     fecha = buscar_columna(
         df, ["Fecha contabiliz.", "Fecha contabilizacion"]
     )
+
     movimiento = buscar_columna(
         df, ["Clase de movimiento"]
     )
+
     unidad = buscar_columna(
         df, ["Un.medida de entrada", "Unidad de medida"]
     )
@@ -551,9 +602,11 @@ def preparar_consumo(df, planta):
         c is None
         for c in [material, cantidad, fecha, movimiento]
     ):
+
         st.error(
             f"Faltan columnas necesarias en consumo {planta}."
         )
+
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
@@ -618,7 +671,11 @@ def preparar_precios(df, planta):
         return pd.DataFrame()
 
     material = buscar_columna(df, ["Material"])
-    descripcion = buscar_columna(df, ["Descripción material"])
+
+    descripcion = buscar_columna(
+        df, ["Descripción material"]
+    )
+
     precio = buscar_columna(df, ["PRECIO"])
     cantidad = buscar_columna(df, ["CANTIDAD"])
     moneda = buscar_columna(df, ["MONEDA"])
@@ -628,7 +685,10 @@ def preparar_precios(df, planta):
     )
 
     fecha_oc = buscar_columna(df, ["FECHA OC"])
-    oc = buscar_columna(df, ["Pedido", "OC"])
+
+    oc = buscar_columna(
+        df, ["Pedido", "OC"]
+    )
 
     posicion = buscar_columna(
         df, ["POSICIÓN", "POSICION"]
@@ -639,9 +699,11 @@ def preparar_precios(df, planta):
     )
 
     if material is None or precio is None:
+
         st.error(
             f"Faltan columnas necesarias en precios {planta}."
         )
+
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
@@ -707,8 +769,10 @@ def preparar_precios(df, planta):
     resultado["Precio unitario"] = np.where(
         resultado["Cantidad precio"].notna()
         & (resultado["Cantidad precio"] > 0),
+
         resultado["Precio original"]
         / resultado["Cantidad precio"],
+
         resultado["Precio original"]
     )
 
@@ -724,7 +788,6 @@ def preparar_precios(df, planta):
 
     return resultado
 
-
 # ==========================================================
 # 10. ARCHIVOS BASE
 # ==========================================================
@@ -733,15 +796,18 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
 ARCHIVOS_CONSUMO = {
+
     "Río Loa": [
         "consumo_rio_loa.xlsx",
         "consumo rio loa.xlsx"
     ],
+
     "Prillex": [
         "consumo_prillex.xlsx",
         "consumo prillex(1).xlsx",
         "consumo prillex.xlsx"
     ],
+
     "Punta Teatinos": [
         "consumo_punta_teatinos.xlsx",
         "consumo teatitos(1).xlsx",
@@ -749,15 +815,19 @@ ARCHIVOS_CONSUMO = {
     ]
 }
 
+
 ARCHIVOS_PRECIOS = {
+
     "Río Loa": [
         "precios_rio_loa.xlsx",
         "precios rio loa.xlsx"
     ],
+
     "Prillex": [
         "precios_prillex.xlsx",
         "PRECIOS PRILLEX.xlsx"
     ],
+
     "Punta Teatinos": [
         "precios_punta_teatinos.xlsx",
         "PRECIOS TEATINOS.xlsx"
@@ -785,15 +855,18 @@ def leer_excel_ruta(ruta):
         return pd.DataFrame()
 
     try:
+
         return pd.read_excel(
             ruta,
             engine="openpyxl"
         )
 
     except Exception as e:
+
         st.error(
             f"No se pudo leer {ruta.name}: {e}"
         )
+
         return pd.DataFrame()
 
 
@@ -881,11 +954,13 @@ lista_consumos = []
 lista_precios = []
 archivos_faltantes = []
 
+
 for planta, candidatos in ARCHIVOS_CONSUMO.items():
 
     ruta = localizar_archivo(candidatos)
 
     if ruta is None:
+
         archivos_faltantes.append(candidatos[0])
         continue
 
@@ -905,6 +980,7 @@ for planta, candidatos in ARCHIVOS_PRECIOS.items():
     ruta = localizar_archivo(candidatos)
 
     if ruta is None:
+
         archivos_faltantes.append(candidatos[0])
         continue
 
@@ -942,6 +1018,7 @@ if archivos_faltantes:
         ):
 
             for nombre in archivos_faltantes:
+
                 st.warning(
                     f"Falta en data/: {nombre}"
                 )
@@ -954,6 +1031,7 @@ if archivos_faltantes:
 anios = []
 
 if not consumos.empty:
+
     anios += (
         consumos["Año"]
         .dropna()
@@ -962,6 +1040,7 @@ if not consumos.empty:
     )
 
 if not precios.empty:
+
     anios += (
         precios["Año"]
         .dropna()
@@ -993,27 +1072,33 @@ consumo_filtrado = consumos.copy()
 precio_filtrado = precios.copy()
 
 if not consumo_filtrado.empty:
+
     consumo_filtrado = consumo_filtrado[
         consumo_filtrado["Año"] == anio_seleccionado
     ]
 
+
 if not precio_filtrado.empty:
+
     precio_filtrado = precio_filtrado[
         precio_filtrado["Año"] == anio_seleccionado
     ]
 
+
 if planta_global != "Todas":
 
     if not consumo_filtrado.empty:
+
         consumo_filtrado = consumo_filtrado[
             consumo_filtrado["Planta"] == planta_global
         ]
 
     if not precio_filtrado.empty:
-        precio_filtrado = precio_filtrado[
 
+        precio_filtrado = precio_filtrado[
             precio_filtrado["Planta"] == planta_global
         ]
+
 
 # ==========================================================
 # 14. RESUMEN GENERAL
@@ -1124,6 +1209,7 @@ if pagina == "Resumen general":
             "No hay datos de consumo para los filtros seleccionados."
         )
 
+
     st.markdown("### Consumo total por planta")
 
     if not consumo_filtrado.empty:
@@ -1209,7 +1295,7 @@ elif pagina == "Análisis por planta":
         else:
 
             # ----------------------------------------------
-            # NIVEL DE SERVICIO DE LA PLANTA SELECCIONADA
+            # NIVEL DE SERVICIO
             # ----------------------------------------------
 
             centro = PLANTAS[planta]
@@ -1219,18 +1305,16 @@ elif pagina == "Análisis por planta":
                 centro
             )
 
-            # Para el gráfico circular se consideran
-            # solamente los materiales MMPP activos.
-
             datos_activos = datos[
                 datos["MMPP Activa"]
                 .astype(str)
                 .str.strip()
-                .str.upper() == "SI"
+                .str.upper()
+                .isin(["SI", "SÍ"])
             ].copy()
 
             ns_activos = (
-                datos_activos["NS Corregido"]
+                datos_activos["NS"]
                 .astype(str)
                 .str.strip()
                 .str.upper()
@@ -1239,6 +1323,8 @@ elif pagina == "Análisis por planta":
             eb = int((ns_activos == "EB").sum())
             sb = int((ns_activos == "SB").sum())
             bb = int((ns_activos == "BB").sum())
+
+            total_ns = eb + sb + bb
 
             a, b, c, d = st.columns(4)
 
@@ -1263,8 +1349,8 @@ elif pagina == "Análisis por planta":
             )
 
             st.caption(
-                "Nivel de servicio ponderado según riesgo MMPP, "
-                "considerando únicamente materiales activos."
+                "Indicador ponderado según riesgo MMPP. "
+                "Solo considera materias primas activas."
             )
 
 
@@ -1324,7 +1410,7 @@ elif pagina == "Análisis por planta":
                         "UM",
                         "Stock Actual",
                         "Cobertura días",
-                        "NS Corregido",
+                        "NS",
                         "Comentario MMPP"
                     ]
 
@@ -1341,72 +1427,51 @@ elif pagina == "Análisis por planta":
                             "Descripción del material": "Descripción",
                             "UM": "Unidad",
                             "Cobertura días": "Cobertura (días)",
-                            "NS Corregido": "Nivel de servicio",
+                            "NS": "Nivel de servicio",
                             "Comentario MMPP": "Comentario"
                         }
                     )
 
-                    if not tabla_alertas.empty:
+                    # Tabla completa en rojo suave.
+                    # Primera fila en negrita.
 
-                        estilo_alertas = (
-                            tabla_alertas.style
-                            .set_properties(
-                                **{
-                                    "background-color": "#FCE8E8",
-                                    "color": "#873B3B",
-                                    "border": "1px solid #E8B4B4"
-                                }
-                            )
-                            .set_table_styles([
-                                {
-                                    "selector": "th",
-                                    "props": [
-                                        ("background-color", "#F4CCCC"),
-                                        ("color", "#873B3B"),
-                                        ("font-weight", "bold"),
-                                        ("border", "1px solid #E8B4B4")
-                                    ]
-                                }
-                            ])
-                            .set_properties(
-                                subset=pd.IndexSlice[
-                                    [tabla_alertas.index[0]], :
-                                ],
-                                **{"font-weight": "bold"}
-                            )
-                            .format({
-                                "Stock Actual": lambda x: formato_numero(x),
-                                "Cobertura (días)": lambda x: formato_numero(x, 1)
-                            })
+                    estilo_alertas = (
+                        tabla_alertas.style
+                        .set_properties(
+                            **{
+                                "background-color": "#FCE8E8",
+                                "color": "#873B3B",
+                                "border": "1px solid #E8B4B4"
+                            }
                         )
+                        .set_table_styles([
+                            {
+                                "selector": "th",
+                                "props": [
+                                    ("background-color", "#F4CCCC"),
+                                    ("color", "#873B3B"),
+                                    ("font-weight", "bold"),
+                                    ("border", "1px solid #E8B4B4")
+                                ]
+                            }
+                        ])
+                        .set_properties(
+                            subset=pd.IndexSlice[
+                                [tabla_alertas.index[0]], :
+                            ],
+                            **{"font-weight": "bold"}
+                        )
+                        .format({
+                            "Stock Actual": lambda x: formato_numero(x),
+                            "Cobertura (días)": lambda x: formato_numero(x, 1)
+                        })
+                    )
 
-                        st.markdown(
-                            """
-                            <style>
-                            .tabla-alertas table {
-                                width: 100%;
-                                border-collapse: collapse;
-                            }
-                            .tabla-alertas th {
-                                background-color: #F4CCCC !important;
-                                color: #873B3B !important;
-                                font-weight: bold !important;
-                                border: 1px solid #E8B4B4 !important;
-                            }
-                            .tabla-alertas td {
-                                background-color: #FCE8E8 !important;
-                                color: #873B3B !important;
-                                border: 1px solid #E8B4B4 !important;
-                            }
-                            </style>
-                            """,
-                            unsafe_allow_html=True
-                        )
-
-                        st.markdown(
-                            f'<div class="tabla-alertas">{estilo_alertas.to_html()}</div>',
-                            unsafe_allow_html=True
-                        )
+                    st.dataframe(
+                        estilo_alertas,
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
                 else:
 
@@ -1435,7 +1500,7 @@ elif pagina == "Análisis por planta":
                     "### Distribución del nivel de servicio"
                 )
 
-                if eb + sb + bb > 0:
+                if total_ns > 0:
 
                     clasificacion = pd.DataFrame({
                         "Clasificación": ["EB", "SB", "BB"],
@@ -1615,7 +1680,9 @@ elif pagina == "Análisis por planta":
 
                 else:
 
-                    st.info("No hay datos de stock actual.")
+                    st.info(
+                        "No hay datos de stock actual."
+                    )
 
             else:
 
@@ -2351,6 +2418,11 @@ elif pagina == "Evolución de precios":
         "Fecha"
     ]
 
+    columnas_historial = [
+        col for col in columnas_historial
+        if col in df.columns
+    ]
+
     historial = (
         df.sort_values(
             "Fecha",
@@ -2409,5 +2481,4 @@ st.caption(
     "ENAEX CHILE | Prototipo académico de gestión de materias primas "
     "| Información sujeta a validación con SAP."
 )
-
 

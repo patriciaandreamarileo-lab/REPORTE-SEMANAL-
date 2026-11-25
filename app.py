@@ -1258,7 +1258,7 @@ elif pagina == "Análisis por planta":
                     # TABLA DE ALERTAS EN ROJO SUAVE
                     # --------------------------------------
 
-                                      def resaltar_alertas(fila):
+                      def resaltar_alertas(fila):
 
                         estilos = [
                             "background-color: #FCE8E8; color: #873B3B;"

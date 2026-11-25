@@ -1257,7 +1257,7 @@ elif pagina == "Análisis por planta":
                     
                     # TABLA DE ALERTAS: FONDO ROJO Y PRIMERA FILA EN NEGRITA
                     
-                        estilo_alertas = (
+                          estilo_alertas = (
                         tabla_alertas.style
                         .set_properties(
                             **{

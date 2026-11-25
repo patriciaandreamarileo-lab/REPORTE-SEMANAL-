@@ -4,7 +4,6 @@ import numpy as np
 import plotly.express as px
 import unicodedata
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 
 # ==========================================================
@@ -42,28 +41,23 @@ st.markdown("""
 .stApp {
     background-color: #F5F7FA;
 }
-
 [data-testid="stSidebar"] {
     background-color: #10234D;
 }
-
 [data-testid="stSidebar"] * {
     color: white !important;
 }
-
 .main-title {
     font-size: 30px;
     font-weight: 750;
     color: #14264E;
     margin-bottom: 0;
 }
-
 .subtitle {
     color: #64748B;
     font-size: 14px;
     margin-bottom: 25px;
 }
-
 div[data-testid="stMetric"] {
     background: white;
     padding: 15px;
@@ -81,12 +75,10 @@ div[data-testid="stMetric"] {
 def normalizar(texto):
     texto = str(texto).strip().lower()
     texto = unicodedata.normalize("NFKD", texto)
-
     texto = "".join(
         c for c in texto
         if not unicodedata.combining(c)
     )
-
     return (
         texto.replace(" ", "")
         .replace("_", "")
@@ -96,23 +88,18 @@ def normalizar(texto):
 
 
 def buscar_columna(df, alternativas):
-
     mapa = {
         normalizar(c): c
         for c in df.columns
     }
 
     for alt in alternativas:
-
         clave = normalizar(alt)
-
         if clave in mapa:
             return mapa[clave]
 
     for clave, original in mapa.items():
-
         for alt in alternativas:
-
             if normalizar(alt) in clave:
                 return original
 
@@ -120,7 +107,6 @@ def buscar_columna(df, alternativas):
 
 
 def limpiar_codigo(valor):
-
     if pd.isna(valor):
         return ""
 
@@ -133,7 +119,6 @@ def limpiar_codigo(valor):
 
 
 def numero(valor):
-
     return pd.to_numeric(
         pd.Series([valor]),
         errors="coerce"
@@ -141,7 +126,6 @@ def numero(valor):
 
 
 def formato_numero(valor, decimales=0):
-
     valor = numero(valor)
 
     if pd.isna(valor):
@@ -156,7 +140,6 @@ def formato_numero(valor, decimales=0):
 
 
 def fecha_excel(serie):
-
     return pd.to_datetime(
         serie,
         errors="coerce",
@@ -180,12 +163,7 @@ def calcular_nivel_servicio(datos, centro):
     if datos.empty:
         return 0.0
 
-    faltantes = [
-        col for col in columnas
-        if col not in datos.columns
-    ]
-
-    if faltantes:
+    if not set(columnas).issubset(datos.columns):
         return 0.0
 
     df = datos.copy()
@@ -233,23 +211,19 @@ def calcular_nivel_servicio(datos, centro):
         "Riesgo MMPP"
     ].sum()
 
-    denominador = (
-        riesgo_eb + riesgo_sb + riesgo_bb
-    )
+    denominador = riesgo_eb + riesgo_sb + riesgo_bb
 
     if denominador == 0:
         return 0.0
 
-    porcentaje = (
+    return (
         (riesgo_eb + 0.5 * riesgo_sb)
         / denominador
     ) * 100
 
-    return porcentaje
-
 
 # ==========================================================
-# 4. SELECTOR DE PLANTAS CON COLORES
+# 4. SELECTOR DE PLANTAS
 # ==========================================================
 
 def selector_planta(titulo, key, incluir_todas=False):
@@ -298,18 +272,13 @@ def selector_planta(titulo, key, incluir_todas=False):
         with columnas[i]:
 
             activo = st.session_state[key] == opcion
-
-            etiqueta = (
-                ("✓ " if activo else "")
-                + opcion
-            )
+            etiqueta = ("✓ " if activo else "") + opcion
 
             if st.button(
                 etiqueta,
                 key=boton_key,
                 use_container_width=True
             ):
-
                 st.session_state[key] = opcion
                 st.rerun()
 
@@ -317,7 +286,7 @@ def selector_planta(titulo, key, incluir_todas=False):
 
 
 # ==========================================================
-# 5. SELECTOR DE MATERIAS PRIMAS
+# 5. SELECTOR Y BÚSQUEDA DE MATERIAS PRIMAS
 # ==========================================================
 
 def selector_material(df, texto, key):
@@ -344,9 +313,10 @@ def selector_material(df, texto, key):
         catalogo["Material"].str.strip() != ""
     ]
 
+    # Búsqueda simultánea por código y descripción.
     busqueda = st.text_input(
         texto,
-        placeholder="Escribe el código o nombre de la materia prima...",
+        placeholder="Buscar por código o nombre de materia prima...",
         key=f"{key}_busqueda"
     ).strip().lower()
 
@@ -354,20 +324,22 @@ def selector_material(df, texto, key):
 
         catalogo = catalogo[
             catalogo["Material"].str.lower().str.contains(
-                busqueda, na=False
+                busqueda,
+                na=False,
+                regex=False
             )
             |
             catalogo["Descripción"].str.lower().str.contains(
-                busqueda, na=False
+                busqueda,
+                na=False,
+                regex=False
             )
         ]
 
     if catalogo.empty:
-
         st.warning(
             "No se encontraron materias primas con esa búsqueda."
         )
-
         return None
 
     opciones = {
@@ -377,7 +349,7 @@ def selector_material(df, texto, key):
     }
 
     etiqueta = st.selectbox(
-        "Seleccionar materia prima (código — nombre)",
+        "Seleccionar materia prima",
         list(opciones.keys()),
         key=f"{key}_seleccion"
     )
@@ -389,28 +361,20 @@ def selector_material(df, texto, key):
 # 6. LECTURA DE EXCEL
 # ==========================================================
 
-def leer_excel_bytes(archivo, sheet_name=0, header=0):
+def leer_excel_ruta(ruta):
 
-    if archivo is None:
+    if ruta is None:
         return pd.DataFrame()
 
     try:
-
-        archivo.seek(0)
-
         return pd.read_excel(
-            BytesIO(archivo.getvalue()),
-            sheet_name=sheet_name,
-            header=header,
+            ruta,
             engine="openpyxl"
         )
-
     except Exception as e:
-
         st.error(
-            f"No se pudo leer {archivo.name}: {e}"
+            f"No se pudo leer {ruta.name}: {e}"
         )
-
         return pd.DataFrame()
 
 
@@ -433,26 +397,20 @@ def preparar_reporte_inventario(archivo):
 
     try:
 
-        excel = pd.ExcelFile(
-            BytesIO(archivo.getvalue()),
-            engine="openpyxl"
-        )
+        excel = pd.ExcelFile(archivo)
 
         for hoja, planta in hojas.items():
 
             if hoja not in excel.sheet_names:
-
                 st.warning(
                     f"No se encontró la hoja '{hoja}' en el reporte."
                 )
-
                 continue
 
             df = pd.read_excel(
-                BytesIO(archivo.getvalue()),
+                archivo,
                 sheet_name=hoja,
-                header=0,
-                engine="openpyxl"
+                header=0
             )
 
             if df.empty:
@@ -473,11 +431,9 @@ def preparar_reporte_inventario(archivo):
             )
 
             if "Material" not in df.columns:
-
                 st.error(
                     f"La hoja {hoja} no contiene la columna Material."
                 )
-
                 continue
 
             df["Material"] = (
@@ -515,31 +471,23 @@ def preparar_reporte_inventario(archivo):
             "Cob. [Meses]",
             "Riesgo MMPP"
         ]:
-
             if col in datos.columns:
-
                 datos[col] = pd.to_numeric(
                     datos[col],
                     errors="coerce"
                 )
 
-        # La columna de clasificación se llama NS.
-
         if "NS" in datos.columns:
-
             datos["NS"] = (
                 datos["NS"]
                 .astype(str)
                 .str.strip()
                 .str.upper()
             )
-
         else:
-
             datos["NS"] = ""
 
         if "MMPP Activa" in datos.columns:
-
             datos["MMPP Activa"] = (
                 datos["MMPP Activa"]
                 .astype(str)
@@ -547,23 +495,18 @@ def preparar_reporte_inventario(archivo):
             )
 
         if "Cob. [Meses]" in datos.columns:
-
             datos["Cobertura días"] = (
                 datos["Cob. [Meses]"] * 30
             )
-
         else:
-
             datos["Cobertura días"] = np.nan
 
         return datos
 
     except Exception as e:
-
         st.error(
             f"Error procesando el reporte de inventario: {e}"
         )
-
         return pd.DataFrame()
 
 
@@ -577,23 +520,18 @@ def preparar_consumo(df, planta):
         return pd.DataFrame()
 
     material = buscar_columna(df, ["Material"])
-
     descripcion = buscar_columna(
         df, ["Descripción material"]
     )
-
     cantidad = buscar_columna(
         df, ["Ctd.en UM entrada", "Cantidad"]
     )
-
     fecha = buscar_columna(
         df, ["Fecha contabiliz.", "Fecha contabilizacion"]
     )
-
     movimiento = buscar_columna(
         df, ["Clase de movimiento"]
     )
-
     unidad = buscar_columna(
         df, ["Un.medida de entrada", "Unidad de medida"]
     )
@@ -602,11 +540,9 @@ def preparar_consumo(df, planta):
         c is None
         for c in [material, cantidad, fecha, movimiento]
     ):
-
         st.error(
             f"Faltan columnas necesarias en consumo {planta}."
         )
-
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
@@ -620,12 +556,10 @@ def preparar_consumo(df, planta):
         if descripcion else ""
     )
 
-    resultado["Cantidad original"] = (
-        pd.to_numeric(
-            df[cantidad],
-            errors="coerce"
-        ).fillna(0)
-    )
+    resultado["Cantidad original"] = pd.to_numeric(
+        df[cantidad],
+        errors="coerce"
+    ).fillna(0)
 
     resultado["Movimiento"] = (
         df[movimiento]
@@ -651,6 +585,7 @@ def preparar_consumo(df, planta):
         resultado["Movimiento"].isin(["261", "262"])
     ].copy()
 
+    # 261 consumo / 262 reversa.
     resultado["Consumo"] = (
         -resultado["Cantidad original"]
     )
@@ -671,11 +606,9 @@ def preparar_precios(df, planta):
         return pd.DataFrame()
 
     material = buscar_columna(df, ["Material"])
-
     descripcion = buscar_columna(
         df, ["Descripción material"]
     )
-
     precio = buscar_columna(df, ["PRECIO"])
     cantidad = buscar_columna(df, ["CANTIDAD"])
     moneda = buscar_columna(df, ["MONEDA"])
@@ -685,10 +618,7 @@ def preparar_precios(df, planta):
     )
 
     fecha_oc = buscar_columna(df, ["FECHA OC"])
-
-    oc = buscar_columna(
-        df, ["Pedido", "OC"]
-    )
+    oc = buscar_columna(df, ["Pedido", "OC"])
 
     posicion = buscar_columna(
         df, ["POSICIÓN", "POSICION"]
@@ -699,11 +629,9 @@ def preparar_precios(df, planta):
     )
 
     if material is None or precio is None:
-
         st.error(
             f"Faltan columnas necesarias en precios {planta}."
         )
-
         return pd.DataFrame()
 
     resultado = pd.DataFrame()
@@ -717,8 +645,9 @@ def preparar_precios(df, planta):
         if descripcion else ""
     )
 
-    resultado["Precio original"] = (
-        pd.to_numeric(df[precio], errors="coerce")
+    resultado["Precio original"] = pd.to_numeric(
+        df[precio],
+        errors="coerce"
     )
 
     resultado["Cantidad precio"] = (
@@ -766,13 +695,12 @@ def preparar_precios(df, planta):
 
     resultado["Planta"] = planta
 
+    # Precio unitario = precio / cantidad.
     resultado["Precio unitario"] = np.where(
         resultado["Cantidad precio"].notna()
         & (resultado["Cantidad precio"] > 0),
-
         resultado["Precio original"]
         / resultado["Cantidad precio"],
-
         resultado["Precio original"]
     )
 
@@ -788,26 +716,24 @@ def preparar_precios(df, planta):
 
     return resultado
 
+
 # ==========================================================
-# 10. ARCHIVOS BASE
+# 10. UBICACIÓN DE ARCHIVOS
 # ==========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
 ARCHIVOS_CONSUMO = {
-
     "Río Loa": [
         "consumo_rio_loa.xlsx",
         "consumo rio loa.xlsx"
     ],
-
     "Prillex": [
         "consumo_prillex.xlsx",
         "consumo prillex(1).xlsx",
         "consumo prillex.xlsx"
     ],
-
     "Punta Teatinos": [
         "consumo_punta_teatinos.xlsx",
         "consumo teatitos(1).xlsx",
@@ -815,19 +741,15 @@ ARCHIVOS_CONSUMO = {
     ]
 }
 
-
 ARCHIVOS_PRECIOS = {
-
     "Río Loa": [
         "precios_rio_loa.xlsx",
         "precios rio loa.xlsx"
     ],
-
     "Prillex": [
         "precios_prillex.xlsx",
         "PRECIOS PRILLEX.xlsx"
     ],
-
     "Punta Teatinos": [
         "precios_punta_teatinos.xlsx",
         "PRECIOS TEATINOS.xlsx"
@@ -849,27 +771,6 @@ def localizar_archivo(candidatos):
     return None
 
 
-def leer_excel_ruta(ruta):
-
-    if ruta is None:
-        return pd.DataFrame()
-
-    try:
-
-        return pd.read_excel(
-            ruta,
-            engine="openpyxl"
-        )
-
-    except Exception as e:
-
-        st.error(
-            f"No se pudo leer {ruta.name}: {e}"
-        )
-
-        return pd.DataFrame()
-
-
 # ==========================================================
 # 11. ENCABEZADO Y BARRA LATERAL
 # ==========================================================
@@ -885,7 +786,6 @@ st.markdown(
     '</p>',
     unsafe_allow_html=True
 )
-
 
 with st.sidebar:
 
@@ -918,17 +818,13 @@ with st.sidebar:
     )
 
     if archivo_reporte is not None:
-
         st.success(
             f"Archivo recibido: {archivo_reporte.name}"
         )
-
         st.caption(
             "El archivo se está utilizando en esta sesión."
         )
-
     else:
-
         st.info(
             "Carga el reporte para visualizar "
             "el análisis de inventario."
@@ -936,9 +832,7 @@ with st.sidebar:
 
     st.divider()
 
-    st.caption(
-        "Prototipo académico | Enaex Chile"
-    )
+    st.caption("Prototipo académico | Enaex Chile")
 
 
 datos_inventario = preparar_reporte_inventario(
@@ -954,22 +848,17 @@ lista_consumos = []
 lista_precios = []
 archivos_faltantes = []
 
-
 for planta, candidatos in ARCHIVOS_CONSUMO.items():
 
     ruta = localizar_archivo(candidatos)
 
     if ruta is None:
-
         archivos_faltantes.append(candidatos[0])
         continue
 
     df = leer_excel_ruta(ruta)
 
-    procesado = preparar_consumo(
-        df,
-        planta
-    )
+    procesado = preparar_consumo(df, planta)
 
     if not procesado.empty:
         lista_consumos.append(procesado)
@@ -980,16 +869,12 @@ for planta, candidatos in ARCHIVOS_PRECIOS.items():
     ruta = localizar_archivo(candidatos)
 
     if ruta is None:
-
         archivos_faltantes.append(candidatos[0])
         continue
 
     df = leer_excel_ruta(ruta)
 
-    procesado = preparar_precios(
-        df,
-        planta
-    )
+    procesado = preparar_precios(df, planta)
 
     if not procesado.empty:
         lista_precios.append(procesado)
@@ -1018,10 +903,7 @@ if archivos_faltantes:
         ):
 
             for nombre in archivos_faltantes:
-
-                st.warning(
-                    f"Falta en data/: {nombre}"
-                )
+                st.warning(f"Falta en data/: {nombre}")
 
 
 # ==========================================================
@@ -1031,7 +913,6 @@ if archivos_faltantes:
 anios = []
 
 if not consumos.empty:
-
     anios += (
         consumos["Año"]
         .dropna()
@@ -1040,7 +921,6 @@ if not consumos.empty:
     )
 
 if not precios.empty:
-
     anios += (
         precios["Año"]
         .dropna()
@@ -1072,29 +952,23 @@ consumo_filtrado = consumos.copy()
 precio_filtrado = precios.copy()
 
 if not consumo_filtrado.empty:
-
     consumo_filtrado = consumo_filtrado[
         consumo_filtrado["Año"] == anio_seleccionado
     ]
 
-
 if not precio_filtrado.empty:
-
     precio_filtrado = precio_filtrado[
         precio_filtrado["Año"] == anio_seleccionado
     ]
 
-
 if planta_global != "Todas":
 
     if not consumo_filtrado.empty:
-
         consumo_filtrado = consumo_filtrado[
             consumo_filtrado["Planta"] == planta_global
         ]
 
     if not precio_filtrado.empty:
-
         precio_filtrado = precio_filtrado[
             precio_filtrado["Planta"] == planta_global
         ]
@@ -1198,17 +1072,14 @@ if pagina == "Resumen general":
             )
 
         else:
-
             st.info(
                 "Los registros de consumo no tienen unidad de medida."
             )
 
     else:
-
         st.info(
             "No hay datos de consumo para los filtros seleccionados."
         )
-
 
     st.markdown("### Consumo total por planta")
 
@@ -1234,10 +1105,7 @@ if pagina == "Resumen general":
                     consumo_filtrado["Unidad"].astype(str)
                     == unidad_comp
                 ]
-                .groupby(
-                    "Planta",
-                    as_index=False
-                )["Consumo"]
+                .groupby("Planta", as_index=False)["Consumo"]
                 .sum()
             )
 
@@ -1294,9 +1162,7 @@ elif pagina == "Análisis por planta":
 
         else:
 
-            # ----------------------------------------------
             # NIVEL DE SERVICIO
-            # ----------------------------------------------
 
             centro = PLANTAS[planta]
 
@@ -1333,30 +1199,16 @@ elif pagina == "Análisis por planta":
                 f"{formato_numero(pct_eb, 1)}%"
             )
 
-            b.metric(
-                "Materiales EB",
-                formato_numero(eb)
-            )
-
-            c.metric(
-                "Materiales SB",
-                formato_numero(sb)
-            )
-
-            d.metric(
-                "Materiales BB",
-                formato_numero(bb)
-            )
+            b.metric("Materiales EB", formato_numero(eb))
+            c.metric("Materiales SB", formato_numero(sb))
+            d.metric("Materiales BB", formato_numero(bb))
 
             st.caption(
                 "Indicador ponderado según riesgo MMPP. "
                 "Solo considera materias primas activas."
             )
 
-
-            # ----------------------------------------------
             # ALERTAS DE COBERTURA
-            # ----------------------------------------------
 
             st.markdown(
                 "### Alertas de cobertura inferior a 10 días"
@@ -1372,35 +1224,33 @@ elif pagina == "Análisis por planta":
 
                 if not alertas.empty:
 
-                    html_alerta = f"""
-                    <div style="
-                        background-color:#FCE8E8;
-                        border-left:6px solid #D97777;
-                        border-radius:9px;
-                        padding:14px 18px;
-                        margin:8px 0 14px 0;
-                    ">
-                        <div style="
-                            color:#963B3B;
-                            font-size:17px;
-                            font-weight:700;
-                        ">
-                            ⚠️ Atención: {len(alertas)} materias primas
-                        </div>
-                        <div style="
-                            color:#873B3B;
-                            font-size:14px;
-                            margin-top:4px;
-                        ">
-                            Se identificaron materiales con menos de
-                            10 días de cobertura. Se recomienda revisar
-                            su planificación y abastecimiento.
-                        </div>
-                    </div>
-                    """
-
                     st.markdown(
-                        html_alerta,
+                        f"""
+                        <div style="
+                            background-color:#FCE8E8;
+                            border-left:6px solid #D97777;
+                            border-radius:9px;
+                            padding:14px 18px;
+                            margin:8px 0 14px 0;
+                        ">
+                            <div style="
+                                color:#963B3B;
+                                font-size:17px;
+                                font-weight:700;
+                            ">
+                                ⚠️ Atención: {len(alertas)} materias primas
+                            </div>
+                            <div style="
+                                color:#873B3B;
+                                font-size:14px;
+                                margin-top:4px;
+                            ">
+                                Se identificaron materiales con menos de
+                                10 días de cobertura. Se recomienda revisar
+                                su planificación y abastecimiento.
+                            </div>
+                        </div>
+                        """,
                         unsafe_allow_html=True
                     )
 
@@ -1432,65 +1282,28 @@ elif pagina == "Análisis por planta":
                         }
                     )
 
-                    # Tabla completa en rojo suave.
-                    # Primera fila en negrita.
-
-                    estilo_alertas = (
-                        tabla_alertas.style
-                        .set_properties(
-                            **{
-                                "background-color": "#FCE8E8",
-                                "color": "#873B3B",
-                                "border": "1px solid #E8B4B4"
-                            }
-                        )
-                        .set_table_styles([
-                            {
-                                "selector": "th",
-                                "props": [
-                                    ("background-color", "#F4CCCC"),
-                                    ("color", "#873B3B"),
-                                    ("font-weight", "bold"),
-                                    ("border", "1px solid #E8B4B4")
-                                ]
-                            }
-                        ])
-                        .set_properties(
-                            subset=pd.IndexSlice[
-                                [tabla_alertas.index[0]], :
-                            ],
-                            **{"font-weight": "bold"}
-                        )
-                        .format({
+                    st.dataframe(
+                        tabla_alertas.style.format({
                             "Stock Actual": lambda x: formato_numero(x),
                             "Cobertura (días)": lambda x: formato_numero(x, 1)
-                        })
-                    )
-
-                    st.dataframe(
-                        estilo_alertas,
+                        }),
                         use_container_width=True,
                         hide_index=True
                     )
 
                 else:
-
                     st.success(
                         "No hay materiales con cobertura inferior a 10 días."
                     )
 
             else:
-
                 st.info(
                     "No se pudo calcular la cobertura en días."
                 )
 
             st.divider()
 
-
-            # ----------------------------------------------
-            # DISTRIBUCIÓN Y RESUMEN DE INVENTARIO
-            # ----------------------------------------------
+            # DISTRIBUCIÓN Y RESUMEN
 
             col1, col2 = st.columns(2)
 
@@ -1535,7 +1348,6 @@ elif pagina == "Análisis por planta":
                     )
 
                 else:
-
                     st.info(
                         "No hay materiales activos clasificados EB, SB o BB."
                     )
@@ -1600,9 +1412,7 @@ elif pagina == "Análisis por planta":
 
             with col2:
 
-                st.markdown(
-                    "### Resumen de inventario"
-                )
+                st.markdown("### Resumen de inventario")
 
                 st.metric(
                     "Materias primas",
@@ -1611,9 +1421,7 @@ elif pagina == "Análisis por planta":
 
                 st.metric(
                     "Stock total registrado",
-                    formato_numero(
-                        datos["Stock Actual"].sum()
-                    )
+                    formato_numero(datos["Stock Actual"].sum())
                     if "Stock Actual" in datos.columns
                     else "—"
                 )
@@ -1627,10 +1435,7 @@ elif pagina == "Análisis por planta":
                     else "—"
                 )
 
-
-            # ----------------------------------------------
-            # 5 MATERIAS PRIMAS CON MENOR STOCK
-            # ----------------------------------------------
+            # CINCO MATERIAS PRIMAS CON MENOR STOCK
 
             st.markdown(
                 "### 5 materias primas con menor stock actual"
@@ -1679,21 +1484,14 @@ elif pagina == "Análisis por planta":
                     )
 
                 else:
-
-                    st.info(
-                        "No hay datos de stock actual."
-                    )
+                    st.info("No hay datos de stock actual.")
 
             else:
-
                 st.warning(
                     "El reporte no contiene la columna Stock Actual."
                 )
 
-
-            # ----------------------------------------------
             # MENOR CONSUMO PROMEDIO Y MAYOR STOCK
-            # ----------------------------------------------
 
             st.markdown(
                 "### 5 materias primas con menor consumo promedio "
@@ -1753,20 +1551,16 @@ elif pagina == "Análisis por planta":
                 )
 
                 st.caption(
-                    "Criterio de ordenamiento: menor consumo promedio "
-                    "primero; si hay empate, mayor stock actual primero."
+                    "Criterio: menor consumo promedio primero; "
+                    "en caso de empate, mayor stock actual."
                 )
 
             else:
-
                 st.warning(
                     "Faltan las columnas Consumo X̅ o Stock Actual."
                 )
 
-
-            # ----------------------------------------------
             # INVENTARIO COMPLETO
-            # ----------------------------------------------
 
             with st.expander(
                 "Ver inventario completo de la planta"
@@ -1791,9 +1585,7 @@ elif pagina == "Análisis por planta":
                     if col in datos.columns
                 ]
 
-                tabla = datos[
-                    columnas
-                ].rename(
+                tabla = datos[columnas].rename(
                     columns={
                         "Material": "Código",
                         "Descripción del material": "Descripción",
@@ -1807,6 +1599,7 @@ elif pagina == "Análisis por planta":
                     use_container_width=True,
                     hide_index=True
                 )
+
 
 # ==========================================================
 # 16. CONSUMO MENSUAL
@@ -1823,11 +1616,9 @@ elif pagina == "Consumo mensual":
     )
 
     if consumos.empty:
-
         st.warning(
             "No se encontraron archivos de consumo en la carpeta data."
         )
-
         st.stop()
 
     planta = selector_planta(
@@ -1839,6 +1630,7 @@ elif pagina == "Consumo mensual":
         consumos["Planta"] == planta
     ].copy()
 
+    # Búsqueda por código o descripción.
     material = selector_material(
         consumo_planta[["Material", "Descripción"]],
         "Buscar materia prima por código o nombre",
@@ -1870,11 +1662,9 @@ elif pagina == "Consumo mensual":
     )
 
     if not unidades:
-
         st.info(
             "El material no tiene unidad de medida informada."
         )
-
         st.stop()
 
     unidad = st.selectbox(
@@ -1936,23 +1726,37 @@ elif pagina == "Consumo mensual":
         formato_numero(len(mensual))
     )
 
+    # ------------------------------------------------------
+    # GRÁFICO DE LÍNEA CON PUNTOS
+    # ------------------------------------------------------
+
     st.markdown(
         "### Evolución mensual del consumo"
     )
 
-    fig = px.bar(
+    fig = px.line(
         mensual,
-        x="Periodo",
+        x="Fecha mes",
         y="Consumo",
-        text="Consumo",
-        color_discrete_sequence=[COLORES[planta]]
+        markers=True,
+        color_discrete_sequence=[COLORES[planta]],
+        hover_data={
+            "Periodo": True,
+            "Consumo": ":,.2f",
+            "Fecha mes": False
+        }
     )
 
     fig.update_traces(
-        texttemplate="%{y:,.0f}",
-        textposition="outside",
+        mode="lines+markers",
+        marker=dict(
+            size=10,
+            symbol="circle"
+        ),
+        line=dict(width=2),
         hovertemplate=(
-            "%{x}<br>Consumo: %{y:,.0f} "
+            "%{customdata[0]}<br>"
+            "Consumo: %{y:,.2f} "
             + unidad
             + "<extra></extra>"
         )
@@ -1962,13 +1766,20 @@ elif pagina == "Consumo mensual":
         template="plotly_white",
         xaxis_title="Mes",
         yaxis_title=f"Consumo ({unidad})",
-        showlegend=False
+        showlegend=False,
+        hovermode="closest"
+    )
+
+    fig.update_xaxes(
+        tickformat="%b %Y"
     )
 
     st.plotly_chart(
         fig,
         use_container_width=True
     )
+
+    # DETALLE DE MOVIMIENTOS SAP
 
     st.markdown(
         "### Detalle de movimientos SAP"
@@ -2010,26 +1821,24 @@ elif pagina == "Evolución de precios":
     )
 
     if precios.empty:
-
         st.warning(
             "No se encontraron archivos de precios SAP en data/."
         )
-
         st.stop()
+
+    # CAMBIO 1:
+    # Se elimina el botón "Todas".
+    # Ahora solo aparecen las tres plantas.
 
     planta_precio = selector_planta(
         "Seleccionar planta",
         "planta_precios",
-        incluir_todas=True
+        incluir_todas=False
     )
 
-    datos = precios.copy()
-
-    if planta_precio != "Todas":
-
-        datos = datos[
-            datos["Planta"] == planta_precio
-        ].copy()
+    datos = precios[
+        precios["Planta"] == planta_precio
+    ].copy()
 
     datos = datos.dropna(
         subset=[
@@ -2043,7 +1852,6 @@ elif pagina == "Evolución de precios":
         datos["Precio unitario"].notna()
     ].copy()
 
-
     # ------------------------------------------------------
     # RANKING DE VARIACIONES
     # ------------------------------------------------------
@@ -2055,7 +1863,7 @@ elif pagina == "Evolución de precios":
     st.caption(
         f"Comparación entre el primer y último precio "
         f"contabilizado durante {anio_seleccionado}, "
-        "por material, planta y moneda."
+        "por material y moneda."
     )
 
     ranking_datos = datos[
@@ -2066,12 +1874,8 @@ elif pagina == "Evolución de precios":
 
     if not ranking_datos.empty:
 
-        for (
-            planta_g,
-            material_g,
-            moneda_g
-        ), grupo in ranking_datos.groupby(
-            ["Planta", "Material", "Moneda"]
+        for (material_g, moneda_g), grupo in ranking_datos.groupby(
+            ["Material", "Moneda"]
         ):
 
             grupo = grupo.sort_values("Fecha")
@@ -2093,7 +1897,7 @@ elif pagina == "Evolución de precios":
                 continue
 
             resultados.append({
-                "Planta": planta_g,
+                "Planta": planta_precio,
                 "Material": material_g,
                 "Descripción": ultimo["Descripción"],
                 "Moneda": moneda_g,
@@ -2131,9 +1935,7 @@ elif pagina == "Evolución de precios":
 
         with ca:
 
-            st.markdown(
-                "#### 🔴 Mayores aumentos"
-            )
+            st.markdown("#### 🔴 Mayores aumentos")
 
             if not aumentos.empty:
 
@@ -2158,16 +1960,11 @@ elif pagina == "Evolución de precios":
                 )
 
             else:
-
-                st.info(
-                    "No hay aumentos registrados."
-                )
+                st.info("No hay aumentos registrados.")
 
         with cb:
 
-            st.markdown(
-                "#### 🟢 Mayores disminuciones"
-            )
+            st.markdown("#### 🟢 Mayores disminuciones")
 
             if not disminuciones.empty:
 
@@ -2192,10 +1989,7 @@ elif pagina == "Evolución de precios":
                 )
 
             else:
-
-                st.info(
-                    "No hay disminuciones registradas."
-                )
+                st.info("No hay disminuciones registradas.")
 
         with st.expander("Consultar ranking completo"):
 
@@ -2209,11 +2003,9 @@ elif pagina == "Evolución de precios":
             )
 
     else:
-
         st.info(
             "No existen suficientes registros para calcular variaciones."
         )
-
 
     # ------------------------------------------------------
     # ANÁLISIS INDIVIDUAL DE PRECIOS
@@ -2225,26 +2017,18 @@ elif pagina == "Evolución de precios":
         "### Análisis individual de precios"
     )
 
-    materiales = sorted(
-        datos["Material"]
-        .dropna()
-        .astype(str)
-        .unique()
+    # CAMBIO 2:
+    # Se incorpora una búsqueda por código y descripción.
+    # La función selector_material realiza ambos filtros.
+
+    material = selector_material(
+        datos[["Material", "Descripción"]],
+        "Buscar materia prima por código o nombre",
+        "material_precio_individual"
     )
 
-    if not materiales:
-
-        st.info(
-            "No hay materiales con precios disponibles."
-        )
-
+    if material is None:
         st.stop()
-
-    material = st.selectbox(
-        "Seleccionar materia prima",
-        materiales,
-        key="material_precio_individual"
-    )
 
     df = datos[
         datos["Material"] == material
@@ -2282,11 +2066,9 @@ elif pagina == "Evolución de precios":
     ].sort_values("Fecha").copy()
 
     if df.empty:
-
         st.warning(
             "No hay registros para esta moneda."
         )
-
         st.stop()
 
     inicial = df.iloc[0]["Precio unitario"]
@@ -2327,10 +2109,7 @@ elif pagina == "Evolución de precios":
         f"{df['Fecha'].max():%d-%m-%Y}"
     )
 
-
-    # ------------------------------------------------------
-    # GRÁFICO DE EVOLUCIÓN
-    # ------------------------------------------------------
+    # GRÁFICO DE EVOLUCIÓN DE PRECIOS
 
     st.markdown(
         "### Evolución histórica del precio unitario"
@@ -2357,6 +2136,11 @@ elif pagina == "Evolución de precios":
         color_discrete_sequence=["#2563EB"]
     )
 
+    fig.update_traces(
+        mode="lines+markers",
+        marker=dict(size=9)
+    )
+
     fig.update_layout(
         template="plotly_white",
         xaxis_title="Fecha de contabilización",
@@ -2369,10 +2153,7 @@ elif pagina == "Evolución de precios":
         use_container_width=True
     )
 
-
-    # ------------------------------------------------------
     # VARIACIÓN ACUMULADA
-    # ------------------------------------------------------
 
     st.markdown(
         "### Variación acumulada del precio"
@@ -2395,10 +2176,7 @@ elif pagina == "Evolución de precios":
         f"{variacion:+.2f}%"
     )
 
-
-    # ------------------------------------------------------
     # HISTORIAL DE ÓRDENES DE COMPRA
-    # ------------------------------------------------------
 
     st.markdown(
         "### Historial de órdenes de compra"
@@ -2481,4 +2259,3 @@ st.caption(
     "ENAEX CHILE | Prototipo académico de gestión de materias primas "
     "| Información sujeta a validación con SAP."
 )
-    

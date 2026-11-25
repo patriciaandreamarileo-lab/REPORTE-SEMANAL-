@@ -1253,37 +1253,32 @@ elif pagina == "Análisis por planta":
                             "Comentario MMPP": "Comentario"
                         }
                     )
+                    # TABLA DE ALERTAS: FONDO ROJO Y PRIMERA FILA EN NEGRITA
 
-                    # --------------------------------------
-                    # TABLA DE ALERTAS EN ROJO SUAVE
-                    # --------------------------------------
-
-                      def resaltar_alertas(fila):
-
-                        estilos = [
-                            "background-color: #FCE8E8; color: #873B3B;"
-                            for _ in fila
-                        ]
-
-                        # Primera fila de datos en negrita.
-                        if fila.name == tabla_alertas.index[0]:
-                            estilos = [
-                                estilo + " font-weight: bold;"
-                                for estilo in estilos
-                            ]
-
-                        return estilos
-
-                    st.dataframe(
+                    estilo_alertas = (
                         tabla_alertas.style
-                        .apply(
-                            resaltar_alertas,
-                            axis=1
+                        .set_properties(
+                            **{
+                                "background-color": "#FCE8E8",
+                                "color": "#873B3B"
+                            }
+                        )
+                        .set_properties(
+                            subset=pd.IndexSlice[
+                                [tabla_alertas.index[0]], :
+                            ],
+                            **{
+                                "font-weight": "bold"
+                            }
                         )
                         .format({
                             "Stock Actual": lambda x: formato_numero(x),
                             "Cobertura (días)": lambda x: formato_numero(x, 1)
-                        }),
+                        })
+                    )
+
+                    st.dataframe(
+                        estilo_alertas,
                         use_container_width=True,
                         hide_index=True
                     )

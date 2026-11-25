@@ -1352,8 +1352,7 @@ elif pagina == "Análisis por planta":
             # ----------------------------------------------
 
             col1, col2 = st.columns(2)
-
-                       with col1:
+            with col1:
 
                 st.markdown(
                     "### Nivel de servicio por planta"
@@ -1361,7 +1360,7 @@ elif pagina == "Análisis por planta":
 
                 columnas_plantas = st.columns(3)
 
-                for i, nombre_planta in enumerate(PLANTAS):
+                for i, nombre_planta in enumerate(PLANTAS.keys()):
 
                     datos_planta = datos_inventario[
                         datos_inventario["Planta"] == nombre_planta
@@ -1374,7 +1373,9 @@ elif pagina == "Análisis por planta":
                         .str.upper()
                     )
 
-                    eb_planta = int((ns_planta == "EB").sum())
+                    eb_planta = int(
+                        (ns_planta == "EB").sum()
+                    )
 
                     total_planta = int(
                         ns_planta.isin(["EB", "SB", "BB"]).sum()
@@ -1393,33 +1394,37 @@ elif pagina == "Análisis por planta":
                         st.markdown(
                             f"""
                             <div style="
-                                background:white;
-                                border-top:5px solid {color};
-                                border-radius:10px;
-                                padding:14px;
-                                border-left:1px solid #E2E8F0;
-                                border-right:1px solid #E2E8F0;
-                                border-bottom:1px solid #E2E8F0;
-                                min-height:145px;
+                                background-color: white;
+                                border-top: 5px solid {color};
+                                border-radius: 10px;
+                                padding: 16px 12px;
+                                border-left: 1px solid #E2E8F0;
+                                border-right: 1px solid #E2E8F0;
+                                border-bottom: 1px solid #E2E8F0;
+                                min-height: 145px;
+                                text-align: center;
                             ">
                                 <div style="
-                                    color:{color};
-                                    font-weight:bold;
-                                    font-size:15px;
+                                    color: {color};
+                                    font-weight: bold;
+                                    font-size: 14px;
                                 ">
                                     {nombre_planta}
                                 </div>
+
                                 <div style="
-                                    font-size:30px;
-                                    font-weight:bold;
-                                    color:#263449;
-                                    margin-top:12px;
+                                    font-size: 28px;
+                                    font-weight: bold;
+                                    color: #263449;
+                                    margin-top: 12px;
                                 ">
                                     {porcentaje:.1f}%
                                 </div>
+
                                 <div style="
-                                    font-size:12px;
-                                    color:#64748B;
+                                    font-size: 11px;
+                                    color: #64748B;
+                                    margin-top: 5px;
                                 ">
                                     {eb_planta} de {total_planta} materiales EB
                                 </div>
@@ -1427,22 +1432,6 @@ elif pagina == "Análisis por planta":
                             """,
                             unsafe_allow_html=True
                         )
-                    fig.update_layout(
-                        template="plotly_white"
-                    )
-
-                    st.plotly_chart(
-                        fig,
-                        use_container_width=True
-                    )
-
-                else:
-
-                    st.info(
-                        "No hay materiales clasificados EB, SB o BB."
-                    )
-
-
             with col2:
 
                 st.markdown(

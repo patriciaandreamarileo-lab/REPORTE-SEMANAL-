@@ -1253,9 +1253,10 @@ elif pagina == "Análisis por planta":
                             "Comentario MMPP": "Comentario"
                         }
                     )
-                    ==========================================================
+
+                    
                     # TABLA DE ALERTAS: FONDO ROJO Y PRIMERA FILA EN NEGRITA
-                    ==========================================================
+                    
                     
                                         estilo_alertas = (
                         tabla_alertas.style

@@ -1258,12 +1258,21 @@ elif pagina == "Análisis por planta":
                     # TABLA DE ALERTAS EN ROJO SUAVE
                     # --------------------------------------
 
-                    def resaltar_alertas(fila):
+                                      def resaltar_alertas(fila):
 
-                        return [
+                        estilos = [
                             "background-color: #FCE8E8; color: #873B3B;"
                             for _ in fila
                         ]
+
+                        # Primera fila de datos en negrita.
+                        if fila.name == tabla_alertas.index[0]:
+                            estilos = [
+                                estilo + " font-weight: bold;"
+                                for estilo in estilos
+                            ]
+
+                        return estilos
 
                     st.dataframe(
                         tabla_alertas.style
@@ -1278,7 +1287,6 @@ elif pagina == "Análisis por planta":
                         use_container_width=True,
                         hide_index=True
                     )
-
                 else:
 
                     st.success(
